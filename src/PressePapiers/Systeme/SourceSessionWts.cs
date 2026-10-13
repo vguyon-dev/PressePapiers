@@ -11,7 +11,10 @@ namespace PressePapiers.Systeme;
 /// </summary>
 public sealed class SourceSessionWts : ISourceSession
 {
-    /// <summary>FILETIME brut de LogonTime (gardé tel quel, comparé en égalité exacte), ou null si la lecture échoue.</summary>
+    /// <summary>
+    /// FILETIME brut de LogonTime (gardé tel quel, comparé en égalité exacte), ou null si la lecture échoue ou si Windows
+    /// ne donne pas d'heure d'ouverture (valeur 0).
+    /// </summary>
     public long? LireHeureOuverture()
     {
         if (!NatifSession.InterrogerSession(NatifSession.ServeurCourant, NatifSession.SessionCourante,
@@ -23,9 +26,14 @@ public sealed class SourceSessionWts : ISourceSession
         try
         {
             // Une structure plus courte que prévu (version de Windows inattendue) ne se lit pas : mieux vaut « inconnu ».
-            return octets >= Marshal.SizeOf<NatifSession.InfoSession>()
-                ? Marshal.PtrToStructure<NatifSession.InfoSession>(tampon).OuvertureSession
-                : null;
+            if (octets < Marshal.SizeOf<NatifSession.InfoSession>())
+            {
+                return null;
+            }
+
+            // Zéro n'est pas une heure : deux lectures à zéro sembleraient être la même session.
+            var ouverture = Marshal.PtrToStructure<NatifSession.InfoSession>(tampon).OuvertureSession;
+            return ouverture == 0 ? null : ouverture;
         }
         finally
         {

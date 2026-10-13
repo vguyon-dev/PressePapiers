@@ -14,9 +14,6 @@ internal static partial class NatifSession
     /// <summary>Valeur WTS_INFO_CLASS pour WTSSessionInfo (structure WTSINFOW).</summary>
     internal const int ClasseSessionInfo = 24;
 
-    /// <summary>Taille de WTSINFOW en x64, contrôlée avant de lire la structure.</summary>
-    internal const int TailleInfoSession = 216;
-
     [LibraryImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool InterrogerSession(nint serveur, uint idSession, int classe, out nint tampon, out uint octets);
