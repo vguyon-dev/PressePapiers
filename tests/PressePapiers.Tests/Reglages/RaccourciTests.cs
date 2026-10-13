@@ -11,14 +11,14 @@ public sealed class RaccourciTests
     [InlineData("Maj+Alt+Ctrl+V", true, true, true, 0x56u)]
     [InlineData("Shift+Ctrl+V", true, false, true, 0x56u)]
     [InlineData("Ctrl+Alt+z", true, true, false, 0x5Au)]
-    [InlineData("Ctrl+1", true, false, false, 0x31u)]
-    [InlineData("Alt+0", false, true, false, 0x30u)]
-    [InlineData("Alt+F5", false, true, false, 0x74u)]
-    [InlineData("Ctrl+F1", true, false, false, 0x70u)]
-    [InlineData("Ctrl+F24", true, false, false, 0x87u)]
-    [InlineData("Ctrl+Espace", true, false, false, 0x20u)]
+    [InlineData("Ctrl+Alt+1", true, true, false, 0x31u)]
+    [InlineData("Alt+Maj+0", false, true, true, 0x30u)]
+    [InlineData("Alt+Maj+F5", false, true, true, 0x74u)]
+    [InlineData("Ctrl+Maj+F1", true, false, true, 0x70u)]
+    [InlineData("Ctrl+Alt+F24", true, true, false, 0x87u)]
+    [InlineData("Ctrl+Maj+Espace", true, false, true, 0x20u)]
     [InlineData("Ctrl+Alt+espace", true, true, false, 0x20u)]
-    [InlineData("Ctrl+F", true, false, false, 0x46u)]
+    [InlineData("Ctrl+Alt+F", true, true, false, 0x46u)]
     [InlineData(" Ctrl + Alt + V ", true, true, false, 0x56u)]
     public void TryAnalyser_accepte_les_formes_valides(string texte, bool ctrl, bool alt, bool maj, uint touche)
     {
@@ -31,8 +31,17 @@ public sealed class RaccourciTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("V")]                // ni Ctrl ni Alt
-    [InlineData("Maj+V")]            // Maj seule ne suffit pas : elle gênerait la frappe ordinaire
+    [InlineData("V")]                // aucun modificateur
+    [InlineData("Maj+V")]            // un seul modificateur : il gênerait la frappe ordinaire
+    [InlineData("Ctrl+C")]           // copier, coller, annuler et fermer ne se détournent pas dans tout Windows
+    [InlineData("Ctrl+V")]
+    [InlineData("Ctrl+Z")]
+    [InlineData("ctrl+x")]
+    [InlineData("Alt+F4")]
+    [InlineData("Alt+0")]
+    [InlineData("Ctrl+1")]
+    [InlineData("Ctrl+Espace")]
+    [InlineData("Ctrl+F24")]
     [InlineData("Ctrl")]             // pas de touche principale
     [InlineData("Ctrl+Alt+Maj")]
     [InlineData("Win+V")]            // la touche Windows est réservée au système
@@ -58,6 +67,16 @@ public sealed class RaccourciTests
         Assert.False(Raccourci.TryAnalyser(texte!, out var raccourci));
 
         Assert.Equal(default, raccourci);
+    }
+
+    [Theory]
+    [InlineData("Ctrl+Alt+V")]
+    [InlineData("Ctrl+Maj+V")]
+    [InlineData("Alt+Maj+V")]
+    [InlineData("Ctrl+Alt+Maj+V")]
+    public void Deux_modificateurs_au_moins_suffisent(string texte)
+    {
+        Assert.True(Raccourci.TryAnalyser(texte, out _));
     }
 
     [Fact]
@@ -122,11 +141,11 @@ public sealed class RaccourciTests
         var essais = 0;
         foreach (var touche in touches)
         {
-            // Les sept combinaisons non vides de modificateurs, dont celles sans Ctrl ni Alt (refusées au retour).
+            // Les sept combinaisons non vides de modificateurs, dont celles à un seul modificateur (refusées au retour).
             for (var masque = 1; masque < 8; masque++)
             {
                 var original = new Raccourci((masque & 1) != 0, (masque & 2) != 0, (masque & 4) != 0, touche);
-                var valide = original.Ctrl || original.Alt;
+                var valide = (original.Ctrl ? 1 : 0) + (original.Alt ? 1 : 0) + (original.Maj ? 1 : 0) >= 2;
 
                 var accepte = Raccourci.TryAnalyser(original.ToString(), out var relu);
 
