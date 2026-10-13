@@ -42,10 +42,13 @@ internal static class SchemaBase
           INSERT INTO element_fts(element_fts, rowid, texte_recherche) VALUES ('delete', old.id, old.texte_recherche);
         END;
 
-        CREATE TRIGGER IF NOT EXISTS element_au AFTER UPDATE ON element BEGIN
+        CREATE TRIGGER IF NOT EXISTS element_au AFTER UPDATE OF texte_recherche ON element BEGIN
           INSERT INTO element_fts(element_fts, rowid, texte_recherche) VALUES ('delete', old.id, old.texte_recherche);
           INSERT INTO element_fts(rowid, texte_recherche) VALUES (new.id, new.texte_recherche);
         END;
+
+        CREATE INDEX IF NOT EXISTS element_onglet_empreinte ON element(onglet_id, empreinte);
+        CREATE INDEX IF NOT EXISTS element_onglet_usage ON element(onglet_id, date_usage DESC, id DESC);
 
         CREATE TABLE IF NOT EXISTS meta (cle TEXT PRIMARY KEY, valeur TEXT);
         """;

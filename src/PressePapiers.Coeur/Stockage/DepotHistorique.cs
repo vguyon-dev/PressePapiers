@@ -1,7 +1,9 @@
 using System.Globalization;
+using System.Text;
 using Microsoft.Data.Sqlite;
 using PressePapiers.Coeur.Journalisation;
 using PressePapiers.Coeur.Modele;
+using PressePapiers.Coeur.Recherche;
 
 namespace PressePapiers.Coeur.Stockage;
 
@@ -13,6 +15,13 @@ namespace PressePapiers.Coeur.Stockage;
 public sealed class DepotHistorique
 {
     private const string NomTemporaire = "Temporaire";
+
+    /// <summary>Recherche d'un doublon dans Temporaire ; interne pour qu'un test vérifie qu'elle passe par l'index des empreintes.</summary>
+    internal const string RequeteDoublon =
+        """
+        SELECT MAX(id) FROM element
+        WHERE onglet_id = $onglet AND empreinte = $empreinte AND type BETWEEN $premier AND $dernier
+        """;
 
     // La connexion elle-même : MoteurRecherche la verrouille aussi, donc une recherche n'utilise jamais la connexion
     // pendant une écriture du dépôt faite sur un autre fil (la capture).
@@ -159,25 +168,117 @@ public sealed class DepotHistorique
     }
 
     /// <summary>Nombre d'éléments d'un onglet.</summary>
-    public int CompterElements(long ongletId) => throw new NotImplementedException("Tâche 5");
+    public int CompterElements(long ongletId)
+    {
+        lock (_verrou)
+        {
+            var nombre = Scalaire("SELECT COUNT(*) FROM element WHERE onglet_id = $onglet", null, ("$onglet", ongletId));
+            return Convert.ToInt32(nombre, CultureInfo.InvariantCulture);
+        }
+    }
 
     /// <summary>Éléments d'un onglet, par DateUsage décroissante puis Id décroissant (ordre stable à date égale).</summary>
-    public IReadOnlyList<Element> ListerElements(long ongletId) => throw new NotImplementedException("Tâche 5");
+    public IReadOnlyList<Element> ListerElements(long ongletId)
+    {
+        lock (_verrou)
+        {
+            return LireElements(null, "WHERE onglet_id = $onglet", ("$onglet", ongletId));
+        }
+    }
 
     /// <summary>Lit un élément, ou null s'il n'existe pas.</summary>
-    public Element? Lire(long elementId) => throw new NotImplementedException("Tâche 5");
+    public Element? Lire(long elementId)
+    {
+        lock (_verrou)
+        {
+            return LireElement(elementId);
+        }
+    }
 
     /// <summary>
-    /// Ajoute une copie à Temporaire avec dédoublonnage, écrit le PNG d'une image ;
-    /// renvoie l'élément créé ou remonté.
+    /// Ajoute une copie à Temporaire, écrit le PNG d'une image et renvoie l'élément créé ou remonté.
+    /// Un contenu identique déjà présent dans Temporaire (même empreinte, même sorte de contenu) n'est pas copié :
+    /// l'élément existant passe en tête et reçoit la nouvelle application d'origine, si elle est connue.
+    /// Le texte brut, avec ou sans mise en forme, est une seule sorte de contenu ; le premier enregistrement est gardé tel quel.
     /// </summary>
-    public Element AjouterCopie(ContenuCopie contenu) => throw new NotImplementedException("Tâche 5");
+    /// <exception cref="ArgumentException">Le contenu principal du type demandé est absent.</exception>
+    public Element AjouterCopie(ContenuCopie contenu)
+    {
+        ArgumentNullException.ThrowIfNull(contenu);
 
-    /// <summary>Donne un nom à un élément et le range dans un onglet autre que Temporaire.</summary>
-    public Element Nommer(long elementId, string nom, long ongletId) => throw new NotImplementedException("Tâche 5");
+        // Hors du verrou : hacher un gros contenu ne doit pas bloquer les autres opérations.
+        var empreinte = Empreinte.Calculer(contenu);
+        var texte = contenu.Type == TypeElement.Fichiers ? string.Join('\n', contenu.Fichiers!) : contenu.Texte;
 
-    /// <summary>Met à jour la date de dernier usage d'un élément.</summary>
-    public void MarquerUtilise(long elementId) => throw new NotImplementedException("Tâche 5");
+        Element resultat;
+        lock (_verrou)
+        {
+            var maintenant = Maintenant();
+            var doublon = TrouverDoublon(empreinte, contenu.Type);
+            resultat = doublon is null
+                ? Inserer(contenu, empreinte, texte, maintenant)
+                : Remonter(doublon.Value, contenu.Application, maintenant);
+        }
+
+        Notifier();
+        return resultat;
+    }
+
+    /// <summary>
+    /// Donne un nom à un élément et le range dans un onglet autre que Temporaire ; vaut aussi pour renommer
+    /// ou déplacer un élément déjà nommé. Le nom est débarrassé des espaces de bord ; sa date d'usage ne change pas.
+    /// </summary>
+    /// <exception cref="ArgumentException">Le nom est vide, ou l'élément ou l'onglet n'existe pas.</exception>
+    /// <exception cref="InvalidOperationException">L'onglet demandé est Temporaire.</exception>
+    public Element Nommer(long elementId, string nom, long ongletId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nom);
+
+        Element nomme;
+        lock (_verrou)
+        {
+            var onglet = LireOnglet(ongletId)
+                ?? throw new ArgumentException($"L'onglet {ongletId} n'existe pas.", nameof(ongletId));
+            if (onglet.EstTemporaire)
+            {
+                throw new InvalidOperationException("Un élément nommé ne peut pas être rangé dans Temporaire.");
+            }
+
+            var courant = LireElement(elementId)
+                ?? throw new ArgumentException($"L'élément {elementId} n'existe pas.", nameof(elementId));
+            var nomPropre = nom.Trim();
+
+            Executer(
+                "UPDATE element SET nom = $nom, onglet_id = $onglet, texte_recherche = $recherche WHERE id = $id",
+                null,
+                ("$nom", nomPropre), ("$onglet", ongletId), ("$id", elementId),
+                ("$recherche", TexteRecherche(nomPropre, courant.Type, courant.Texte, courant.Application)));
+            nomme = courant with { Nom = nomPropre, OngletId = ongletId };
+        }
+
+        Notifier();
+        return nomme;
+    }
+
+    /// <summary>
+    /// Met à jour la date de dernier usage d'un élément, qui passe en tête de son onglet ; sans effet s'il n'existe pas.
+    /// </summary>
+    public void MarquerUtilise(long elementId)
+    {
+        lock (_verrou)
+        {
+            var ongletId = Scalaire("SELECT onglet_id FROM element WHERE id = $id", null, ("$id", elementId));
+            if (ongletId is null)
+            {
+                return;
+            }
+
+            var date = DateUsageSuivante(Convert.ToInt64(ongletId, CultureInfo.InvariantCulture), Maintenant(), null);
+            Executer("UPDATE element SET date_usage = $date WHERE id = $id", null, ("$date", EnTexte(date)), ("$id", elementId));
+        }
+
+        Notifier();
+    }
 
     /// <summary>Supprime un élément et son PNG.</summary>
     public void Supprimer(long elementId) => throw new NotImplementedException("Tâche 6");
@@ -246,6 +347,151 @@ public sealed class DepotHistorique
             throw new InvalidOperationException($"L'onglet Temporaire ne peut pas être {action}.");
         }
     }
+
+    // ---- Éléments : lecture ----
+
+    private Element? LireElement(long id) => LireElements(null, "WHERE id = $id", ("$id", id)).FirstOrDefault();
+
+    // Même clause que pour les onglets : un texte écrit ici, les valeurs passent par des paramètres.
+    private List<Element> LireElements(SqliteTransaction? transaction, string clause, params (string Nom, object? Valeur)[] parametres)
+    {
+        using var commande = Preparer(
+            $"SELECT {LecteurElement.Colonnes} FROM element {clause} ORDER BY date_usage DESC, id DESC", transaction, parametres);
+        using var lecteur = commande.ExecuteReader();
+        var elements = new List<Element>();
+        while (lecteur.Read())
+        {
+            elements.Add(LecteurElement.Lire(lecteur));
+        }
+
+        return elements;
+    }
+
+    // ---- Éléments : ajout et dédoublonnage ----
+
+    // Dates toujours en UTC et en texte « O » : le tri par texte de SQLite suit alors l'ordre chronologique.
+    private DateTimeOffset Maintenant() => _horloge.GetUtcNow().ToUniversalTime();
+
+    private static string EnTexte(DateTimeOffset date) => date.ToString("O", CultureInfo.InvariantCulture);
+
+    // Texte brut avec ou sans mise en forme : une seule famille de contenu pour le dédoublonnage. Une liste de fichiers
+    // et un texte qui reproduit ses chemins ont la même empreinte mais restent deux éléments.
+    private long? TrouverDoublon(byte[] empreinte, TypeElement type)
+    {
+        var (premier, dernier) = type switch
+        {
+            TypeElement.Texte or TypeElement.MisEnForme => ((int)TypeElement.Texte, (int)TypeElement.MisEnForme),
+            _ => ((int)type, (int)type),
+        };
+
+        // Pas de tri : avec un ORDER BY, SQLite parcourrait l'onglet dans l'ordre des dates au lieu d'utiliser l'index
+        // des empreintes. Il n'y a normalement qu'un doublon ; s'il y en avait plusieurs, on prend le plus récent par Id.
+        var id = Scalaire(
+            RequeteDoublon, null,
+            ("$onglet", OngletTemporaire.Id), ("$empreinte", empreinte), ("$premier", premier), ("$dernier", dernier));
+        return id is long trouve ? trouve : null;
+    }
+
+    // Date d'usage d'un élément qui passe en tête : l'heure courante, mais jamais avant ni à égalité avec le plus récent
+    // de l'onglet (rafale dans la même milliseconde, horloge qui recule). L'ordre d'usage ne dépend ainsi jamais d'une égalité.
+    private DateTimeOffset DateUsageSuivante(long ongletId, DateTimeOffset maintenant, SqliteTransaction? transaction)
+    {
+        var plusRecente = Scalaire("SELECT MAX(date_usage) FROM element WHERE onglet_id = $onglet", transaction, ("$onglet", ongletId));
+        if (plusRecente is not string texte)
+        {
+            return maintenant;
+        }
+
+        var derniere = DateTimeOffset.ParseExact(texte, "O", CultureInfo.InvariantCulture);
+        return maintenant > derniere ? maintenant : derniere.AddTicks(1);
+    }
+
+    private Element Inserer(ContenuCopie contenu, byte[] empreinte, string? texte, DateTimeOffset maintenant)
+    {
+        // Le PNG est écrit avant la ligne : un échec de l'insertion retire le fichier, jamais l'inverse.
+        string? imageFichier = null;
+        if (contenu.Type == TypeElement.Image)
+        {
+            Directory.CreateDirectory(_dossiers.Images);
+            imageFichier = Guid.NewGuid().ToString("N") + ".png";
+            File.WriteAllBytes(Path.Combine(_dossiers.Images, imageFichier), contenu.ImagePng!);
+        }
+
+        try
+        {
+            var dateUsage = DateUsageSuivante(OngletTemporaire.Id, maintenant, null);
+            var taille = contenu.Type == TypeElement.Image ? contenu.ImagePng!.Length : Encoding.UTF8.GetByteCount(texte!);
+
+            Executer(
+                """
+                INSERT INTO element (onglet_id, nom, type, texte, texte_recherche, rtf, html, image_fichier, miniature,
+                                     empreinte, application, date_copie, date_usage, taille)
+                VALUES ($onglet, NULL, $type, $texte, $recherche, $rtf, $html, $image, $miniature,
+                        $empreinte, $application, $copie, $usage, $taille)
+                """,
+                null,
+                ("$onglet", OngletTemporaire.Id), ("$type", (int)contenu.Type), ("$texte", texte),
+                ("$recherche", TexteRecherche(null, contenu.Type, texte, contenu.Application)),
+                ("$rtf", contenu.Rtf), ("$html", contenu.Html), ("$image", imageFichier), ("$miniature", contenu.Miniature),
+                ("$empreinte", empreinte), ("$application", contenu.Application),
+                ("$copie", EnTexte(maintenant)), ("$usage", EnTexte(dateUsage)), ("$taille", taille));
+            var id = Convert.ToInt64(Scalaire("SELECT last_insert_rowid()", null), CultureInfo.InvariantCulture);
+
+            return new Element
+            {
+                Id = id,
+                OngletId = OngletTemporaire.Id,
+                Type = contenu.Type,
+                Texte = texte,
+                Rtf = contenu.Rtf,
+                Html = contenu.Html,
+                ImageFichier = imageFichier,
+                Miniature = contenu.Miniature,
+                Empreinte = empreinte,
+                Application = contenu.Application,
+                DateCopie = maintenant,
+                DateUsage = dateUsage,
+                Taille = taille,
+            };
+        }
+        catch
+        {
+            if (imageFichier is not null)
+            {
+                SupprimerFichiersImages([imageFichier]);
+            }
+
+            throw;
+        }
+    }
+
+    // Un doublon n'est pas recopié : sa date d'usage avance, et son application d'origine est remplacée si la nouvelle est connue.
+    // Le texte de recherche porte l'application, il est donc recalculé avec elle.
+    private Element Remonter(long id, string? application, DateTimeOffset maintenant)
+    {
+        var courant = LireElement(id)!;
+        var dateUsage = DateUsageSuivante(courant.OngletId, maintenant, null);
+
+        if (application is null || application == courant.Application)
+        {
+            // Le texte de recherche n'est pas touché : le déclencheur de l'index ne réindexe pas un gros texte pour une date.
+            Executer("UPDATE element SET date_usage = $usage WHERE id = $id", null, ("$usage", EnTexte(dateUsage)), ("$id", id));
+            return courant with { DateUsage = dateUsage };
+        }
+
+        Executer(
+            "UPDATE element SET date_usage = $usage, application = $application, texte_recherche = $recherche WHERE id = $id",
+            null,
+            ("$usage", EnTexte(dateUsage)), ("$application", application), ("$id", id),
+            ("$recherche", TexteRecherche(courant.Nom, courant.Type, courant.Texte, application)));
+        return courant with { DateUsage = dateUsage, Application = application };
+    }
+
+    // Pour une liste de fichiers, le texte est la liste des chemins : on la passe comme telle, pas aussi comme texte.
+    private static string TexteRecherche(string? nom, TypeElement type, string? texte, string? application) =>
+        type == TypeElement.Fichiers
+            ? Normalisation.TexteRecherche(nom, null, texte?.Split('\n', StringSplitOptions.RemoveEmptyEntries), application)
+            : Normalisation.TexteRecherche(nom, texte, null, application);
 
     // ---- Suppression partagée entre les onglets et (tâche 6) la purge ----
 
