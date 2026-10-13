@@ -22,14 +22,14 @@
             <StackPanel Spacing="6">
                 <TextBlock Text="Raccourci de secours" Style="{StaticResource TitreReglage}" />
                 <TextBlock Style="{StaticResource DescriptionReglage}"
-                           Text="Toujours actif, en plus de Win+V : utile devant une fenêtre administrateur, où Win+V n'est pas intercepté. Sur un clavier AZERTY, Ctrl+Alt+lettre est aussi AltGr+lettre (€, @, #...) : cette lettre ne s'écrirait plus ; préfère une combinaison avec Maj ou une touche de fonction." />
+                           Text="Toujours actif, en plus de Win+V : utile devant une fenêtre administrateur, où Win+V n'est pas intercepté tant que PressePapiers n'est pas lui-même lancé en administrateur. Win+V, Win+Maj+V et Win+Ctrl+V sont réservés par Windows et refusés. Sur un clavier AZERTY, Ctrl+Alt+lettre est aussi AltGr+lettre (€, @, #...) : cette lettre ne s'écrirait plus." />
                 <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBox x:Name="ChampRaccourci" Grid.Column="0" AutomationProperties.Name="Raccourci de secours"
-                             PlaceholderText="Ctrl+Alt+Maj+V" KeyDown="ChampRaccourci_KeyDown" />
+                             PlaceholderText="Win+Alt+V" KeyDown="ChampRaccourci_KeyDown" />
                     <Button x:Name="BoutonRaccourci" Grid.Column="1" Content="Appliquer" Click="Raccourci_Click" />
                 </Grid>
                 <TextBlock x:Name="MessageRaccourci" Style="{StaticResource DescriptionReglage}" Visibility="Collapsed" />

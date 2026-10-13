@@ -116,4 +116,16 @@ public sealed class AutomateWinVRepetitionsTests
         // Windows a vu Win+Ctrl+V : le menu Démarrer ne s'ouvrira pas, aucune touche sans effet n'est utile.
         Assert.Equal(ActionCrochet.Laisser, Relacher(automate, Win, winReelle: false, temps: 500));
     }
+
+    [Fact]
+    public void Win_Alt_V_raccourci_de_secours_arrive_intact_a_Windows_et_Win_se_relache_sans_masque()
+    {
+        // Alt est un « autre modificateur » comme Ctrl ou Maj : le hook ne touche à rien, RegisterHotKey reçoit Win+Alt+V.
+        var automate = new AutomateWinV();
+        Appuyer(automate, Win, winReelle: true, temps: 100);
+
+        Assert.Equal(ActionCrochet.Laisser, Appuyer(automate, V, winReelle: true, temps: 200, autre: true));
+        Assert.Equal(ActionCrochet.Laisser, Relacher(automate, V, winReelle: true, temps: 250));
+        Assert.Equal(ActionCrochet.Laisser, Relacher(automate, Win, winReelle: false, temps: 500));
+    }
 }

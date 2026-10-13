@@ -31,6 +31,10 @@ public sealed class ServiceParametres
 
     private static readonly UTF8Encoding Utf8SansMarque = new(encoderShouldEmitUTF8Identifier: false);
 
+    // Défaut des versions d'avant le 13/10/2026 : trop long à presser. Une valeur égale à celle-ci vient du défaut, que
+    // l'utilisateur n'a jamais choisi, et passe au nouveau défaut.
+    private const string AncienRaccourciParDefaut = "Ctrl+Alt+Maj+V";
+
     private const int LargeurMinimale = 400;
     private const int HauteurMinimale = 300;
 
@@ -143,6 +147,13 @@ public sealed class ServiceParametres
         if (remplacees.Count > 0)
         {
             _journal.Avertissement($"Réglages inutilisables dans {_cheminFichier}, corrigés un à un ({string.Join(" ; ", remplacees)}).");
+        }
+
+        // Migration douce, en mémoire : le fichier garde l'ancienne valeur jusqu'au prochain enregistrement des réglages.
+        if (lus.RaccourciSecours == AncienRaccourciParDefaut)
+        {
+            _journal.Info($"Raccourci de secours « {AncienRaccourciParDefaut} » (ancien défaut) remplacé par le nouveau défaut « {defauts.RaccourciSecours} ».");
+            lus = lus with { RaccourciSecours = defauts.RaccourciSecours };
         }
 
         return lus;

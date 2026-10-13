@@ -5,8 +5,11 @@ namespace PressePapiers.Coeur.Reglages;
 /// <summary>Réglages de l'utilisateur, avec les valeurs par défaut de la spec.</summary>
 public sealed record Parametres
 {
-    /// <summary>Raccourci de secours, toujours actif en plus de Win+V.</summary>
-    public string RaccourciSecours { get; init; } = "Ctrl+Alt+Maj+V";
+    /// <summary>
+    /// Raccourci de secours, toujours actif en plus de Win+V. Win+Alt+V : Windows refuse Win+Maj+V et Win+Ctrl+V (réservés),
+    /// mais accepte celui-ci, qui reste court à presser et marche aussi devant une fenêtre administrateur.
+    /// </summary>
+    public string RaccourciSecours { get; init; } = "Win+Alt+V";
 
     /// <summary>Lancer l'application à l'ouverture de session Windows.</summary>
     public bool DemarrageAvecWindows { get; init; } = true;

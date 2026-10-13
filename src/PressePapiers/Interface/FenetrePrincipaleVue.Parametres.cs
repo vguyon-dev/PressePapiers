@@ -79,10 +79,14 @@ public sealed partial class FenetrePrincipaleVue
     /// <returns>Null si le raccourci est enregistré, sinon le message à montrer sous le champ.</returns>
     public string? ChangerRaccourci(string texte)
     {
-        if (!Raccourci.TryAnalyser(texte, out var raccourci))
+        switch (Raccourci.Analyser(texte, out var raccourci))
         {
-            return "Raccourci non reconnu. Exemple : Ctrl+Alt+Maj+V (au moins deux modificateurs parmi Ctrl, Alt et Maj, jamais la touche Windows ; "
-                   + "touche : lettre, chiffre, F1 à F24 ou Espace).";
+            case ResultatAnalyse.ReserveParWindows:
+                return "Windows se réserve cette combinaison (Win+V, Win+Maj+V et Win+Ctrl+V ne peuvent pas être enregistrés) : "
+                       + "choisis-en une autre, par exemple Win+Alt+V.";
+            case ResultatAnalyse.Invalide:
+                return "Raccourci non reconnu. Exemple : Win+Alt+V (au moins deux modificateurs parmi Win, Ctrl, Alt et Maj ; "
+                       + "touche : lettre, chiffre, F1 à F24 ou Espace).";
         }
 
         if (AppliquerRaccourci?.Invoke(raccourci) is { } refus)

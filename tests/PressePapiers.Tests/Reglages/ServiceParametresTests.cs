@@ -28,7 +28,7 @@ public sealed class ServiceParametresTests : IDisposable
     {
         var parametres = new Parametres();
 
-        Assert.Equal("Ctrl+Alt+Maj+V", parametres.RaccourciSecours);
+        Assert.Equal("Win+Alt+V", parametres.RaccourciSecours);
         Assert.True(parametres.DemarrageAvecWindows);
         Assert.Equal(ModeCollage.TexteSeul, parametres.MiseEnFormeParDefaut);
         Assert.Equal(5000, parametres.PlafondTemporaire);
@@ -199,7 +199,7 @@ public sealed class ServiceParametresTests : IDisposable
 
         Assert.Equal(ThemeApplication.Clair, parametres.Theme);
         Assert.Equal(100, parametres.PlafondTemporaire);
-        Assert.Equal("Ctrl+Alt+Maj+V", parametres.RaccourciSecours);
+        Assert.Equal("Win+Alt+V", parametres.RaccourciSecours);
         Assert.Equal(920, parametres.LargeurFenetre);
         Assert.Equal(new Parametres().ApplicationsChasseFixe, parametres.ApplicationsChasseFixe);
         Assert.Empty(_journal.Avertissements);
@@ -250,7 +250,7 @@ public sealed class ServiceParametresTests : IDisposable
         var parametres = Creer().Charger();
 
         Assert.Equal(ThemeApplication.Sombre, parametres.Theme);
-        Assert.Equal("Ctrl+Alt+Maj+V", parametres.RaccourciSecours);
+        Assert.Equal("Win+Alt+V", parametres.RaccourciSecours);
         Assert.Equal(new Parametres().ApplicationsChasseFixe, parametres.ApplicationsChasseFixe);
         Assert.Equal(5000, parametres.PlafondTemporaire);
         Assert.Equal(920, parametres.LargeurFenetre);
@@ -364,14 +364,54 @@ public sealed class ServiceParametresTests : IDisposable
         Assert.Equal(defauts.HauteurFenetre, parametres.HauteurFenetre);
     }
 
+    [Fact]
+    public void L_ancien_defaut_du_raccourci_de_secours_passe_au_nouveau_defaut_en_le_journalisant()
+    {
+        File.WriteAllText(Chemin, """{ "RaccourciSecours": "Ctrl+Alt+Maj+V", "LargeurFenetre": 700 }""");
+
+        var parametres = Creer().Charger();
+
+        Assert.Equal("Win+Alt+V", parametres.RaccourciSecours);
+        Assert.Equal(700, parametres.LargeurFenetre);
+        Assert.Empty(_journal.Avertissements);
+        Assert.Contains(_journal.Infos, m => m.Contains("Ctrl+Alt+Maj+V") && m.Contains("Win+Alt+V"));
+    }
+
+    [Theory]
+    [InlineData("Ctrl+Alt+K")]
+    [InlineData("ctrl+alt+maj+v")]      // seule la valeur exacte de l'ancien défaut est migrée : celle-ci a pu être saisie
+    [InlineData("Win+Alt+V")]
+    public void Un_autre_raccourci_de_secours_est_garde_tel_quel(string raccourci)
+    {
+        File.WriteAllText(Chemin, $$"""{ "RaccourciSecours": "{{raccourci}}" }""");
+
+        var parametres = Creer().Charger();
+
+        Assert.Equal(raccourci, parametres.RaccourciSecours);
+        Assert.DoesNotContain(_journal.Infos, m => m.Contains("ancien défaut"));
+    }
+
+    [Fact]
+    public void Le_nouveau_defaut_est_ecrit_par_le_prochain_enregistrement_apres_la_migration()
+    {
+        File.WriteAllText(Chemin, """{ "RaccourciSecours": "Ctrl+Alt+Maj+V" }""");
+        var service = Creer();
+
+        service.Enregistrer(service.Charger());
+
+        // Le JSON écrit « + » en + : on relit plutôt que de chercher le texte.
+        Assert.DoesNotContain("Maj", File.ReadAllText(Chemin).Split("RaccourciSecours")[1].Split(',')[0]);
+        Assert.Equal("Win+Alt+V", Creer().Charger().RaccourciSecours);
+    }
+
     // Journal qui retient les avertissements, propre à ce fichier de tests.
     private sealed class JournalEspion : IJournal
     {
         public List<string> Avertissements { get; } = [];
 
-        public void Info(string message)
-        {
-        }
+        public List<string> Infos { get; } = [];
+
+        public void Info(string message) => Infos.Add(message);
 
         public void Avertissement(string message, Exception? exception = null) => Avertissements.Add(message);
 
