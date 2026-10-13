@@ -201,6 +201,9 @@ Comportements à connaître :
 - Le hook Win+V (`WH_KEYBOARD_LL`) vit sur un fil dédié et se réinstalle seul toutes les 15 minutes ; l'application le
   réinstalle aussi au déverrouillage de la session et à la sortie de veille. Arrêté ou planté, l'outil rend la main à
   l'historique natif de Windows, laissé activé.
+- Le hook n'ignore que les frappes que PressePapiers envoie lui-même (touche sans effet, Ctrl+V du recollage), reconnues
+  à la signature `NatifClavier.SignatureFrappes` posée dans `dwExtraInfo`. Une frappe simplement injectée reste une vraie
+  frappe : certains logiciels de clavier (Razer Synapse) réinjectent toutes les touches réelles.
 - Le [mode administrateur](#mode-administrateur) se reconnaît dans `ModeAdministrateur` (Coeur, testé) : processus élevé
   (niveau d'intégrité du jeton, `NiveauIntegrite`) et exécutable sous Program Files, Program Files (x86) ou Windows ;
   `LancementAdministrateur` fournit les deux faits. `GestionDemarrage` n'écrit plus la clé Run dans ce cas, les Paramètres
@@ -319,4 +322,4 @@ Comportements à connaître :
 - [ ] **Point 5, raccourci de secours devant une fenêtre administrateur** (Win+Alt+V, devant le Gestionnaire des tâches).
 - [ ] **Point 6, Win+V devant une fenêtre administrateur** : l'historique natif reprend la main.
 - [ ] **Point 7, format PNG à l'écriture** : accepté par Word, Excel, PowerPoint, Outlook, un navigateur et Paint, transparence comprise (la lecture d'un `CF_DIBV5` avec transparence est vérifiée).
-- [ ] **Hook Win+V réel** : l'avalement de Win+V par la vraie touche Windows n'a pas pu être simulé (seule l'injection l'a été) ; si Win+V n'est pas repris, c'est le premier point à examiner (lecture de la touche Windows par `GetAsyncKeyState`).
+- [x] **Hook Win+V réel** : vérifié le 2026-10-13 sur un poste où Razer Synapse réinjecte toutes les frappes du clavier (drapeau `LLKHF_INJECTED` sur les vraies touches). Le hook n'écarte donc que les frappes signées par PressePapiers (`dwExtraInfo` = `NatifClavier.SignatureFrappes`), et plus toutes les frappes injectées ; avant ce correctif, Win+V n'était jamais repris sur ce poste.

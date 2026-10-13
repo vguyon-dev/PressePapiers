@@ -346,7 +346,10 @@ public sealed class CrochetWinV : ICrochetWinV
             var relachee = message is NatifClavier.WM_KEYUP or NatifClavier.WM_SYSKEYUP;
             if (!enfoncee && !relachee) return NatifClavier.CallNextHookEx(_crochetCourant, code, wParam, lParam);
 
-            var injectee = (drapeaux & NatifClavier.LLKHF_INJECTED) != 0;
+            // Seules nos propres frappes sont écartées : une frappe injectée par un autre logiciel (pilote de clavier qui
+            // réinjecte tout, comme Razer Synapse) est une vraie frappe de l'utilisateur.
+            var injectee = (drapeaux & NatifClavier.LLKHF_INJECTED) != 0
+                && Marshal.ReadIntPtr(lParam, NatifClavier.DecalageInfoSupplementaire) == NatifClavier.SignatureFrappes;
             var heure = (uint)Marshal.ReadInt32(lParam, NatifClavier.DecalageHeure);
 
             // L'état réel des modificateurs n'est utile (et lu) que pour V : les autres touches ne l'interrogent pas.
@@ -387,9 +390,11 @@ public sealed class CrochetWinV : ICrochetWinV
         var entrees = new NatifClavier.Entree[2];
         entrees[0].Type = NatifClavier.INPUT_KEYBOARD;
         entrees[0].Clavier.Touche = NatifClavier.VK_MASQUE;
+        entrees[0].Clavier.InfoSupplementaire = NatifClavier.SignatureFrappes;
         entrees[1].Type = NatifClavier.INPUT_KEYBOARD;
         entrees[1].Clavier.Touche = NatifClavier.VK_MASQUE;
         entrees[1].Clavier.Drapeaux = NatifClavier.KEYEVENTF_KEYUP;
+        entrees[1].Clavier.InfoSupplementaire = NatifClavier.SignatureFrappes;
         NatifClavier.SendInput(2, entrees, Marshal.SizeOf<NatifClavier.Entree>());
     }
 }

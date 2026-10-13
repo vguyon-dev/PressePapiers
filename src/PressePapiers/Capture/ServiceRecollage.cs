@@ -197,5 +197,7 @@ public sealed class ServiceRecollage
         entree.Clavier.Touche = touche;
         entree.Clavier.CodeBalayage = (ushort)NatifSaisie.MapVirtualKey(touche, NatifSaisie.MAPVK_VK_TO_VSC);
         entree.Clavier.Drapeaux = relache ? NatifSaisie.KEYEVENTF_KEYUP : 0;
+        // Signée : le hook Win+V reconnaît ainsi ses propres frappes parmi celles qu'un logiciel de clavier réinjecte.
+        entree.Clavier.InfoSupplementaire = NatifClavier.SignatureFrappes;
     }
 }

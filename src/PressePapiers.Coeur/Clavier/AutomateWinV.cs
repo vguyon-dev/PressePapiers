@@ -53,7 +53,8 @@ public sealed class AutomateWinV
     private bool WinEnfoncee => _winGaucheEnfoncee || _winDroiteEnfoncee;
 
     /// <summary>
-    /// Décide du sort d'une frappe. <paramref name="injectee"/> : frappe portant LLKHF_INJECTED (toujours laissée) ;
+    /// Décide du sort d'une frappe. <paramref name="injectee"/> : frappe envoyée par PressePapiers lui-même (toujours
+    /// laissée) ; une frappe injectée par un autre logiciel, qui réinjecte les frappes réelles, n'en est pas une ;
     /// <paramref name="winReellementEnfoncee"/> : résultat de GetAsyncKeyState au moment de V ;
     /// <paramref name="temps"/> : heure de la frappe en millisecondes (champ time de KBDLLHOOKSTRUCT, compteur 32 bits
     /// qui peut repasser par zéro) ; <paramref name="autreModificateurEnfonce"/> : Ctrl, Alt ou Maj tenue avec V, ce qui

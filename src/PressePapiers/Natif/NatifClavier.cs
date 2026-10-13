@@ -19,6 +19,13 @@ internal static partial class NatifClavier
     /// <summary>Drapeau LLKHF_INJECTED de KBDLLHOOKSTRUCT.flags : frappe produite par SendInput.</summary>
     internal const uint LLKHF_INJECTED = 0x10;
 
+    /// <summary>
+    /// Signature posée dans dwExtraInfo de chaque frappe que PressePapiers envoie (touche sans effet, Ctrl+V du recollage).
+    /// LLKHF_INJECTED ne suffit pas à reconnaître nos frappes : certains logiciels de clavier (Razer Synapse par exemple)
+    /// réinjectent toutes les frappes réelles, qui portent alors ce drapeau.
+    /// </summary>
+    internal const nint SignatureFrappes = 0x50505056;   // « PPPV »
+
     internal const uint INPUT_KEYBOARD = 1;
     internal const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -31,10 +38,11 @@ internal static partial class NatifClavier
     /// <summary>Touche « sans effet » envoyée avant le relâchement de Win pour que le menu Démarrer reste fermé.</summary>
     internal const ushort VK_MASQUE = 0xE8;
 
-    /// <summary>Décalages des champs de KBDLLHOOKSTRUCT (vkCode, scanCode, flags, time).</summary>
+    /// <summary>Décalages des champs de KBDLLHOOKSTRUCT (vkCode, scanCode, flags, time, dwExtraInfo aligné sur 8 en x64).</summary>
     internal const int DecalageCodeTouche = 0;
     internal const int DecalageDrapeaux = 8;
     internal const int DecalageHeure = 12;
+    internal const int DecalageInfoSupplementaire = 16;
 
     /// <summary>Action de SystemParametersInfo qui lit le délai de répétition du clavier (0 à 3, soit (n + 1) x 250 ms).</summary>
     internal const uint SPI_GETKEYBOARDDELAY = 0x0016;
