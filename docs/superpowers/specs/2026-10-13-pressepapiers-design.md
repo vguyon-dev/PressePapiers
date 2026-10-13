@@ -50,6 +50,20 @@
 >   une seconde instance qui ne peut pas rediriger démarre à la place de la première si celle-ci a disparu, sinon affiche un
 >   message ; `publier.ps1` refuse les destinations dangereuses.
 
+> **Statut au 13/10/2026, après la recette** (`docs/superpowers/plans/2026-10-13-pressepapiers/revue.md`, section 6). Deux
+> changements décidés sur le poste, qui l'emportent sur le texte plus bas :
+>
+> - **Raccourci de secours (sections 8, 11, 14 et 16)** : le défaut est **Win+Alt+V** et non plus Ctrl+Alt+Maj+V, trop long à
+>   presser devant une fenêtre administrateur. La touche Windows est acceptée comme modificateur (au moins deux modificateurs
+>   parmi Win, Ctrl, Alt et Maj) ; `RegisterHotKey` refusant Win+Maj+V et Win+Ctrl+V (erreur 1409, réservés par Windows),
+>   ces combinaisons et Win+V sont refusées d'avance. Un `parametres.json` qui contient exactement l'ancien défaut passe au
+>   nouveau au chargement. Le hook laisse déjà passer Win+Alt+V (Alt est un autre modificateur).
+> - **Mode administrateur (sections 10.3, 12 et 14)** : en plus du mode normal, `scripts\publier.ps1 -Administrateur`
+>   installe l'outil dans `C:\Program Files\PressePapiers` et crée une tâche planifiée qui le lance en administrateur à
+>   l'ouverture de session ; Win+V et le collage automatique fonctionnent alors devant les fenêtres administrateur. L'outil
+>   reconnaît ce mode à son jeton élevé et à son dossier protégé, ne gère plus la clé Run et remplace l'interrupteur de
+>   démarrage par un texte dans les Paramètres. Voir la section « Mode administrateur » du README.
+
 ## 1. Objet
 
 Remplacer l'historique du presse-papiers de Windows 11 (Win+V) par un outil personnel plus complet.

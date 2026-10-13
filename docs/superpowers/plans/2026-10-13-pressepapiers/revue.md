@@ -75,3 +75,12 @@ Constats mineurs non traités, à reprendre au besoin :
 - normalisation de la recherche qui retire aussi les marques des écritures non latines ;
 - programmes de vérification native (presse-papiers réel) non versionnés dans le dépôt ;
 - arrêt poli de l'application par `publier.ps1` (pas d'argument `--quitter`) : arrêt forcé après délai.
+
+## 6. Après la recette
+
+Statut au 13/10/2026. Deux changements décidés après l'essai sur le poste, faits sur `main` (le code fait foi) :
+
+- **Raccourci de secours Win+Alt+V** (`9d34889`) : Ctrl+Alt+Maj+V était trop long à presser devant une fenêtre administrateur. À l'essai, `RegisterHotKey` refuse Win+Maj+V et Win+Ctrl+V (erreur 1409) et accepte Win+Alt+V, qui devient le défaut. `Raccourci` accepte la touche Windows (au moins deux modificateurs parmi Win, Ctrl, Alt et Maj ; forme canonique Win, Ctrl, Alt, Maj) et refuse d avance Win+V, Win+Maj+V et Win+Ctrl+V avec un verdict distinct (`ResultatAnalyse`). Un `parametres.json` qui contient exactement l'ancien défaut passe au nouveau au chargement (migration en mémoire, une ligne au journal). Le hook laissait déjà passer Win+Alt+V.
+- **Mode administrateur** (`8905e63`, `00b7a92`) : `publier.ps1 -Administrateur` installe dans Program Files (réservé aux administrateurs, sinon tout processus de l'utilisateur pourrait remplacer l'exécutable lancé avec leurs droits), contrôle le propriétaire et les droits du dossier, crée la tâche planifiée `PressePapiers` (ouverture de session, privilèges les plus élevés, session interactive, sans limite de durée, une instance) et retire la valeur Run, en une seule étape élevée (une invite UAC) ; `-RetirerAdministrateur` revient au mode normal. L application détecte ce mode sans appeler le Planificateur : jeton élevé et exécutable sous un dossier protégé (`ModeAdministrateur`, `LancementAdministrateur`). Dans ce mode elle ne gère plus la clé Run, les Paramètres remplacent l'interrupteur par un texte, une seconde instance non élevée affiche que l'outil tourne déjà en administrateur, le message de l'icône est autorisé au filtre UIPI et les dossiers et fichiers s ouvrent par l'Explorateur.
+
+Non vérifié sur le poste (à jouer par la recette « Mode administrateur » du README) : l'étape élevée de `publier.ps1`, la tâche planifiée réelle, le comportement de l'icône et de Win+V d un processus élevé, Win+Alt+V au relâchement de Win, l'ouverture du journal sans droits administrateur.
