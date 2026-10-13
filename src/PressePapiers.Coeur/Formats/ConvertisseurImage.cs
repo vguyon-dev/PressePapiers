@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
@@ -21,13 +22,30 @@ public static class ConvertisseurImage
     /// </summary>
     /// <param name="dib">Octets du DIB (CF_DIB ou CF_DIBV5).</param>
     /// <returns>Les octets du PNG.</returns>
-    /// <exception cref="ArgumentException">L'en-tête du DIB est invalide ou ses pixels sont tronqués.</exception>
+    /// <exception cref="ArgumentException">
+    /// L'en-tête du DIB est invalide ou hostile (profondeur de couleur inconnue, dimensions nulles, négatives ou démesurées,
+    /// plus de 64 millions de pixels, compression JPEG, PNG ou inconnue, RLE disproportionné), ses pixels sont tronqués, ou le décodeur ne sait pas les lire.
+    /// </exception>
     public static async Task<byte[]> DibVersPngAsync(byte[] dib)
     {
         ArgumentNullException.ThrowIfNull(dib);
 
-        using var bitmap = await DecoderAsync(EnteteDib.AjouterEnteteFichier(dib));
-        return await EncoderPngAsync(bitmap);
+        var fichier = EnteteDib.AjouterEnteteFichier(dib);
+        SoftwareBitmap bitmap;
+        try
+        {
+            bitmap = await DecoderAsync(fichier);
+        }
+        catch (COMException exception)
+        {
+            // L'en-tête était plausible mais le décodeur refuse les pixels (données corrompues, variante non gérée).
+            throw new ArgumentException("Le décodeur d'images ne sait pas lire ce DIB.", nameof(dib), exception);
+        }
+
+        using (bitmap)
+        {
+            return await EncoderPngAsync(bitmap);
+        }
     }
 
     /// <summary>

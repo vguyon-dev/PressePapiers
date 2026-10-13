@@ -7,7 +7,7 @@ namespace PressePapiers.Tests.Outils;
 
 /// <summary>Fabrique des DIB et des PNG synthétiques pour les tests de conversion d'image.</summary>
 /// <remarks>Les pixels sont donnés au format BGRA, ligne du haut en premier, alpha non prémultiplié.</remarks>
-internal static class ImagesSynthetiques
+internal static partial class ImagesSynthetiques
 {
     public const uint BiRgb = 0;
     public const uint BiBitfields = 3;
