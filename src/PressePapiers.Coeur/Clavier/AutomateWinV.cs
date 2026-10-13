@@ -96,16 +96,28 @@ public sealed class AutomateWinV
                 return premiere ? ActionCrochet.AvalerEtOuvrir : ActionCrochet.Avaler;
             }
 
+            // Seul le relâchement d'un V dont l'enfoncement a été avalé l'est aussi : si V était déjà tenue avant Win,
+            // l'application a vu l'enfoncement et doit voir le relâchement, sinon elle croirait la touche coincée.
+            if (!_vAvalee) return ActionCrochet.Laisser;
+
             _vAvalee = false;
             return ActionCrochet.Avaler;
         }
 
-        // Win a été lâchée avant V : V, déjà avalée à l'enfoncement, l'est encore jusqu'à son relâchement,
-        // sinon la répétition écrirait des « v » dans l'application.
+        // Win a été lâchée avant V : V, déjà avalée à l'enfoncement, l'est encore jusqu'à son relâchement.
         if (_vAvalee)
         {
-            if (!enfoncee) _vAvalee = false;
-            return ActionCrochet.Avaler;
+            if (!enfoncee)
+            {
+                _vAvalee = false;
+                return ActionCrochet.Avaler;
+            }
+
+            // Un nouvel enfoncement de V alors que Win n'est plus là et que V est dite avalée : le hook n'a pas vu le
+            // relâchement de la précédente (fenêtre élevée, écran de verrouillage). C'est une frappe neuve, qu'on ne
+            // vole pas : on oublie l'état périmé et on la laisse passer.
+            RemettreAZero();
+            return ActionCrochet.Laisser;
         }
 
         return ActionCrochet.Laisser;

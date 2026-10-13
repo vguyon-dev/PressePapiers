@@ -100,10 +100,11 @@ public sealed class AutomateWinVTests
         Appuyer(automate, Win);
         Appuyer(automate, V);
 
-        // L'utilisateur lâche Win avant V : le masque part, et V, toujours tenue, ne doit ni s'écrire ni répéter.
+        // L'utilisateur lâche Win avant V : le masque part, et le relâchement de V, dont l'enfoncement a été avalé, l'est aussi.
         Assert.Equal(ActionCrochet.MasquerPuisLaisser, Relacher(automate, Win, winReelle: false));
-        Assert.Equal(ActionCrochet.Avaler, Appuyer(automate, V, winReelle: false));
         Assert.Equal(ActionCrochet.Avaler, Relacher(automate, V, winReelle: false));
+        // V est ensuite une touche ordinaire.
+        Assert.Equal(ActionCrochet.Laisser, Appuyer(automate, V, winReelle: false));
     }
 
     [Fact]
