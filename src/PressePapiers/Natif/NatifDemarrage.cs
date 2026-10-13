@@ -12,6 +12,15 @@ internal static partial class NatifDemarrage
     /// <summary>Attente de CoWaitForMultipleObjects : sans drapeau particulier, les messages COM continuent d'être pompés.</summary>
     internal const uint CWMO_DEFAULT = 0;
 
+    /// <summary>Contrôle des conditions d'exécution de XAML, appelé en tête du Main généré par WinUI.</summary>
+    [LibraryImport("Microsoft.ui.xaml.dll")]
+    internal static partial void XamlCheckProcessRequirements();
+
+    /// <summary>Autorise un autre processus à prendre le premier plan (le processus appelant doit pouvoir le donner).</summary>
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool AllowSetForegroundWindow(uint idProcessus);
+
     [LibraryImport("user32.dll", EntryPoint = "MessageBoxW", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial int AfficherMessage(nint proprietaire, string texte, string titre, uint style);
 
