@@ -38,6 +38,7 @@ public sealed class OuvertureBaseTests : IDisposable
         Assert.Empty(_dialogue.Informations);
         Assert.Empty(_dialogue.Questions);
         Assert.Empty(Directory.GetFiles(_dossiers.Sauvegardes));
+        Assert.False(ouverte.RestaureeDepuisSauvegarde);
     }
 
     [Fact]
@@ -52,6 +53,7 @@ public sealed class OuvertureBaseTests : IDisposable
         Assert.Equal(["historique-20261013-081530.db"], NomsDeFichiers(_dossiers.Sauvegardes));
         Assert.Empty(_dialogue.Informations);
         Assert.Empty(_dialogue.Questions);
+        Assert.False(ouverte.RestaureeDepuisSauvegarde);
     }
 
     [Fact]
@@ -103,6 +105,8 @@ public sealed class OuvertureBaseTests : IDisposable
         Assert.Equal("3", InsertionsSql.Scalaire(ouverte.Connexion, "SELECT COUNT(*) FROM element"));
         Assert.Single(_dialogue.Questions);
         Assert.Empty(_dialogue.Informations);
+        // Le démarrage s'en sert pour ne pas faire le ménage des images de la base abîmée.
+        Assert.True(ouverte.RestaureeDepuisSauvegarde);
         // Les deux bonnes copies survivent à la base abîmée, et celle-ci est gardée à côté pour examen.
         Assert.Equal(
             ["historique-20261013-061530.db", "historique-20261013-071530.db", "illisible-20261013-081530.db"],

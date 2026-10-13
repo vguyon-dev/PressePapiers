@@ -60,7 +60,7 @@ public sealed class DepotImagesTests : IDisposable
     public void Le_menage_ne_touche_qu_aux_fichiers_png_places_directement_dans_le_dossier()
     {
         var texte = Poser("notes.txt");
-        var provisoire = Poser("ancien.png.tmp");
+        var autreProvisoire = Poser("ancien.tmp");
         var autreExtension = Poser("image.png2");
         var sansExtension = Poser("png");
         var sousDossier = Path.Combine(Images, "sous-dossier");
@@ -72,11 +72,45 @@ public sealed class DepotImagesTests : IDisposable
         Assert.Equal(1, Depot.NettoyerImagesOrphelines());
 
         Assert.True(File.Exists(texte));
-        Assert.True(File.Exists(provisoire));
+        Assert.True(File.Exists(autreProvisoire));
         Assert.True(File.Exists(autreExtension));
         Assert.True(File.Exists(sansExtension));
         Assert.True(File.Exists(dansSousDossier));
         Assert.False(File.Exists(Path.Combine(Images, "orpheline.png")));
+    }
+
+    [Fact]
+    public void Le_menage_supprime_les_provisoires_d_une_ecriture_interrompue()
+    {
+        var provisoire = Poser("abandonne.png.tmp");
+        var majuscules = Poser("ABANDONNE2.PNG.TMP");
+        var garde = Depot.AjouterCopie(ContenusDeTest.Image(ContenusDeTest.Png(1)));
+
+        var supprimes = Depot.NettoyerImagesOrphelines();
+
+        Assert.Equal(2, supprimes);
+        Assert.False(File.Exists(provisoire));
+        Assert.False(File.Exists(majuscules));
+        Assert.Equal([garde.ImageFichier!], _banc.NomsImages());
+    }
+
+    [Fact]
+    public void Le_menage_epargne_le_provisoire_d_une_ecriture_en_cours_puis_le_supprime_une_fois_terminee()
+    {
+        var fichiers = new FichiersImages(_banc.Dossiers, _journal);
+        // Ecrire laisse le nom « en cours » jusqu'à Terminer : le PNG existe, sa ligne n'est pas encore en base.
+        var nom = fichiers.Ecrire(ContenusDeTest.Png(9));
+        var provisoire = Poser(nom + ".tmp");
+
+        Assert.Equal(0, fichiers.SupprimerOrphelines([]));
+        Assert.True(File.Exists(provisoire));
+        Assert.True(File.Exists(Path.Combine(Images, nom)));
+
+        fichiers.Terminer(nom);
+
+        Assert.Equal(2, fichiers.SupprimerOrphelines([]));
+        Assert.False(File.Exists(provisoire));
+        Assert.False(File.Exists(Path.Combine(Images, nom)));
     }
 
     [Fact]

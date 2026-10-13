@@ -9,6 +9,7 @@ namespace PressePapiers.Coeur.Stockage;
 internal sealed class FichiersImages(DossierDonnees dossiers, IJournal journal)
 {
     private const string Extension = ".png";
+    private const string ExtensionProvisoire = ".png.tmp";
 
     // Noms écrits ou en cours d'écriture dont la ligne n'est peut-être pas encore en base : le ménage les laisse en place.
     private readonly HashSet<string> _enCours = new(StringComparer.OrdinalIgnoreCase);
@@ -69,8 +70,10 @@ internal sealed class FichiersImages(DossierDonnees dossiers, IJournal journal)
 
     /// <summary>
     /// Supprime les fichiers <c>.png</c> placés directement dans le dossier des images et absents de
-    /// <paramref name="references"/> ; rien d'autre n'est touché (autres extensions, sous-dossiers, fichiers provisoires).
-    /// Les PNG en cours d'écriture sont épargnés. Renvoie le nombre de fichiers supprimés.
+    /// <paramref name="references"/>, ainsi que les <c>.png.tmp</c> d'une écriture interrompue (arrêt brutal entre la
+    /// création du fichier provisoire et son déplacement) ; rien d'autre n'est touché (autres extensions, sous-dossiers).
+    /// Les PNG et leurs fichiers provisoires en cours d'écriture sont épargnés. Renvoie le nombre de fichiers supprimés
+    /// et note ce nombre au journal.
     /// </summary>
     public int SupprimerOrphelines(IEnumerable<string> references)
     {
@@ -84,8 +87,7 @@ internal sealed class FichiersImages(DossierDonnees dossiers, IJournal journal)
         foreach (var chemin in Directory.EnumerateFiles(dossiers.Images))
         {
             var nom = Path.GetFileName(chemin);
-            // Le filtre de l'énumération accepterait aussi « .png2 » (noms courts 8.3) : l'extension se vérifie ici.
-            if (!string.Equals(Path.GetExtension(nom), Extension, StringComparison.OrdinalIgnoreCase) || connus.Contains(nom) || EstEnCours(nom))
+            if (!EstAbandonne(nom, connus))
             {
                 continue;
             }
@@ -102,6 +104,21 @@ internal sealed class FichiersImages(DossierDonnees dossiers, IJournal journal)
         }
 
         return supprimes;
+    }
+
+    // Un PNG que la base ne référence pas et qu'aucune écriture n'a en main ; un provisoire dont le PNG final n'est pas
+    // en cours d'écriture. Le filtre de l'énumération accepterait aussi « .png2 » (noms courts 8.3) : les extensions
+    // se vérifient ici, en entier.
+    private bool EstAbandonne(string nom, HashSet<string> connus)
+    {
+        if (nom.EndsWith(ExtensionProvisoire, StringComparison.OrdinalIgnoreCase))
+        {
+            return !EstEnCours(nom[..^".tmp".Length]);
+        }
+
+        return string.Equals(Path.GetExtension(nom), Extension, StringComparison.OrdinalIgnoreCase)
+               && !connus.Contains(nom)
+               && !EstEnCours(nom);
     }
 
     private bool EstEnCours(string nom)

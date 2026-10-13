@@ -492,9 +492,10 @@ public sealed class DepotHistorique
     /// <summary>
     /// Supprime du dossier des images les fichiers <c>.png</c> que plus aucun élément ne référence (reste d'un arrêt brutal
     /// entre l'écriture d'un PNG et celle de sa ligne, d'une suppression de ligne dont le fichier était verrouillé...).
-    /// Ne touche à rien d'autre que des fichiers <c>.png</c> placés directement dans ce dossier ; les PNG en cours d'écriture
-    /// par une capture sont épargnés. À appeler au démarrage. Renvoie le nombre de fichiers supprimés ; chaque suppression
-    /// impossible est notée au journal et laissée pour la fois suivante.
+    /// Supprime aussi les <c>.png.tmp</c> d'une écriture interrompue. Ne touche à rien d'autre que ces fichiers placés
+    /// directement dans ce dossier ; les PNG en cours d'écriture par une capture sont épargnés. À appeler au démarrage, sauf
+    /// juste après une restauration de copie de sécurité. Renvoie le nombre de fichiers supprimés (le journal en garde la
+    /// trace) ; chaque suppression impossible est notée au journal et laissée pour la fois suivante.
     /// </summary>
     public int NettoyerImagesOrphelines()
     {

@@ -203,11 +203,15 @@ public sealed partial class App : Application
         var session = DemarrageSession.Appliquer(new SourceSessionWts(), _depot, _journal);
         _journal.Info($"Session Windows : {session.Etat}, {session.ElementsPurges} élément(s) de Temporaire purgé(s).");
 
-        // Après la purge et avant toute capture : un plantage ou une restauration a pu laisser des PNG sans élément.
-        var orphelines = _depot.NettoyerImagesOrphelines();
-        if (orphelines > 0)
+        // Après la purge et avant toute capture : un plantage a pu laisser des PNG sans élément. Pas après une
+        // restauration : les PNG des éléments perdus de la base abîmée (gardée à part) doivent rester récupérables.
+        if (_base.RestaureeDepuisSauvegarde)
         {
-            _journal.Info($"{orphelines} image(s) orpheline(s) supprimée(s) du dossier des images.");
+            _journal.Info("Base restaurée depuis une copie de sécurité : les images sans élément sont conservées.");
+        }
+        else
+        {
+            _depot.NettoyerImagesOrphelines();
         }
 
         CreerFenetrePrincipale(_base, _depot, dossiers);

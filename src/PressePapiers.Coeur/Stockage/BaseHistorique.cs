@@ -33,6 +33,13 @@ public sealed class BaseHistorique : IDisposable
     public string VersionSqlite { get; }
 
     /// <summary>
+    /// Vrai si cette base vient d'être restaurée depuis une copie de sécurité parce que la précédente était illisible
+    /// (voir <see cref="OuvertureBase"/>). Les PNG de la base abîmée, gardée à part, restent alors récupérables : tant
+    /// qu'ils n'ont pas été retrouvés, aucun ménage ne doit les supprimer.
+    /// </summary>
+    public bool RestaureeDepuisSauvegarde { get; internal set; }
+
+    /// <summary>
     /// Ouvre ou crée la base : schéma de la spec (section 5), <c>journal_mode=WAL</c>, <c>foreign_keys=ON</c>.
     /// Une base de version 1 est migrée vers la version 2 (une transaction, tout ou rien) ; une base d'une version plus
     /// récente que celle que cette application connaît est refusée, sans y toucher.

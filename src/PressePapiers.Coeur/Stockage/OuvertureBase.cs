@@ -18,7 +18,8 @@ public static class OuvertureBase
     /// Copie la base, l'ouvre, et gère les échecs. Renvoie null quand l'application ne peut pas démarrer : l'utilisateur
     /// en a alors été informé par <paramref name="dialogue"/> et le détail est au journal. Une copie de sécurité impossible
     /// n'empêche pas de démarrer (avertissement seulement). La restauration n'est proposée que pour une base abîmée,
-    /// jamais pour un autre échec (accès refusé, base verrouillée, SQLite trop ancienne).
+    /// jamais pour un autre échec (accès refusé, base verrouillée, SQLite trop ancienne). Une base restaurée le dit par
+    /// <see cref="BaseHistorique.RestaureeDepuisSauvegarde"/>.
     /// </summary>
     /// <param name="dossiers">Emplacements des données (base et copies).</param>
     /// <param name="horloge">Source de l'heure du nom des copies.</param>
@@ -139,6 +140,7 @@ public static class OuvertureBase
 
             Sauvegarde.Restaurer(copie, dossiers.Base);
             var restauree = ouvrir(dossiers.Base);
+            restauree.RestaureeDepuisSauvegarde = true;
             journal.Info($"Base restaurée depuis la copie de sécurité {Path.GetFileName(copie)}.");
             return restauree;
         }
