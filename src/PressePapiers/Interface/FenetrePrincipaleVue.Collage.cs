@@ -92,10 +92,11 @@ public sealed partial class FenetrePrincipaleVue
                 "Copié. La fenêtre d'origine n'existe plus : colle avec Ctrl+V.", bulleCopie),
             IssueCollage.CopieFenetreElevee => (InfoBarSeverity.Informational,
                 "Copié. La fenêtre d'origine est lancée en administrateur : colle avec Ctrl+V.", bulleCopie),
+            IssueCollage.CollageNonEnvoye => (InfoBarSeverity.Warning, bulleImpossible, bulleImpossible),
             IssueCollage.Echec => (InfoBarSeverity.Error, "Le collage a échoué. Le détail est dans le journal.", bulleImpossible),
 
-            // Toute autre issue est une copie sans collage (touches de modification restées enfoncées, par exemple).
-            _ => (InfoBarSeverity.Warning, "Copié, mais le collage n'a pas été envoyé : colle avec Ctrl+V.", bulleImpossible),
+            // Toute issue future non prévue ici reste annoncée comme une copie sans collage, jamais muette.
+            _ => (InfoBarSeverity.Warning, bulleImpossible, bulleImpossible),
         };
 
         if (!fenetreMasquee)

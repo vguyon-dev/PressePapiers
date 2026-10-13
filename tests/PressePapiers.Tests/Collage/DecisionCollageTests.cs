@@ -71,13 +71,18 @@ public sealed class DecisionCollageTests
     }
 
     [Fact]
-    public void Decider_ne_renvoie_jamais_Echec()
+    public void Decider_ne_renvoie_jamais_Echec_ni_CollageNonEnvoye()
     {
-        // Echec est réservé au service (écriture ou premier plan impossibles), jamais à la décision préalable.
+        // Echec (écriture ou premier plan impossibles) et CollageNonEnvoye (modificateurs restés enfoncés) sont réservés
+        // au service, jamais à la décision préalable.
         foreach (var copie in new[] { true, false })
         foreach (var connue in new[] { true, false })
         foreach (var existe in new[] { true, false })
         foreach (var niveau in new int?[] { null, 0x1000, 0x2000, 0x3000 })
-            Assert.NotEqual(IssueCollage.Echec, DecisionCollage.Decider(copie, connue, existe, niveau, NiveauOutil));
+        {
+            var issue = DecisionCollage.Decider(copie, connue, existe, niveau, NiveauOutil);
+            Assert.NotEqual(IssueCollage.Echec, issue);
+            Assert.NotEqual(IssueCollage.CollageNonEnvoye, issue);
+        }
     }
 }

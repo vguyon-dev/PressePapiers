@@ -52,7 +52,7 @@ public sealed class ServiceRecollage
     /// plus élevée. Pour les autres copies seules, la fenêtre reste ouverte et l'appelant affiche son message.
     /// Fenêtre encore affichée, <see cref="IssueCollage.Echec"/> signifie écriture impossible ou premier plan refusé.
     /// Fenêtre déjà masquée, l'appelant doit signaler l'issue hors de la fenêtre : <see cref="IssueCollage.Echec"/> si le
-    /// premier plan a changé avant Ctrl+V ou si la frappe n'a pas été insérée, <see cref="IssueCollage.CopieDemandee"/>
+    /// premier plan a changé avant Ctrl+V ou si la frappe n'a pas été insérée, <see cref="IssueCollage.CollageNonEnvoye"/>
     /// si des modificateurs sont restés enfoncés (l'élément est copié, Ctrl+V n'est pas envoyé).
     /// </remarks>
     public async Task<IssueCollage> CollerAsync(Element element, ModeCollage mode, nint fenetreOrigine, bool copieSeule,
@@ -120,7 +120,7 @@ public sealed class ServiceRecollage
         if (!await AttendreModificateursRelachesAsync())
         {
             _journal.Avertissement("Des modificateurs sont restés enfoncés plus d'une seconde : Ctrl+V n'est pas envoyé, l'élément reste copié.");
-            return IssueCollage.CopieDemandee;
+            return IssueCollage.CollageNonEnvoye;
         }
 
         // Coller dans une autre fenêtre que celle prévue serait pire que ne pas coller.
