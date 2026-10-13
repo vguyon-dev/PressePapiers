@@ -42,6 +42,9 @@ public sealed partial class VueApercu : UserControl
             }
         };
         vue.Rafraichi += SynchroniserOnglets;
+
+        // Changer le mode par défaut dans les Paramètres change le libellé du bouton d'autre mode.
+        vue.ParametresModifies += () => BoutonAutreMode.Label = vue.LibelleAutreMode;
         SynchroniserOnglets();
         Afficher(vue.ElementSelectionne);
     }

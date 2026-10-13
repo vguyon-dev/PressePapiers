@@ -1,0 +1,93 @@
+<UserControl
+    x:Class="PressePapiers.Interface.PageParametres"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <UserControl.Resources>
+        <!-- Titre d'un réglage et sa description en dessous. -->
+        <Style x:Key="TitreReglage" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="DescriptionReglage" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer Padding="24,16,24,16">
+        <StackPanel Spacing="20" MaxWidth="600" HorizontalAlignment="Left">
+            <TextBlock Text="Paramètres" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+            <!-- Raccourci de secours -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Raccourci de secours" Style="{StaticResource TitreReglage}" />
+                <TextBlock Style="{StaticResource DescriptionReglage}"
+                           Text="Toujours actif, en plus de Win+V : utile devant une fenêtre administrateur, où Win+V n'est pas intercepté." />
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="ChampRaccourci" Grid.Column="0" AutomationProperties.Name="Raccourci de secours"
+                             PlaceholderText="Ctrl+Alt+Maj+V" KeyDown="ChampRaccourci_KeyDown" />
+                    <Button x:Name="BoutonRaccourci" Grid.Column="1" Content="Appliquer" Click="Raccourci_Click" />
+                </Grid>
+                <TextBlock x:Name="MessageRaccourci" Style="{StaticResource DescriptionReglage}" Visibility="Collapsed" />
+                <TextBlock x:Name="ErreurRaccourci" Style="{StaticResource DescriptionReglage}" Visibility="Collapsed"
+                           Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+            </StackPanel>
+
+            <!-- Démarrage avec Windows -->
+            <ToggleSwitch x:Name="InterrupteurDemarrage" Header="Démarrage avec Windows" OnContent="Activé" OffContent="Désactivé"
+                          Toggled="Demarrage_Toggled" />
+
+            <!-- Mise en forme par défaut -->
+            <StackPanel Spacing="6">
+                <ComboBox x:Name="ChoixMiseEnForme" Header="Mise en forme par défaut au collage" MinWidth="240"
+                          SelectionChanged="MiseEnForme_SelectionChanged">
+                    <ComboBoxItem Content="Texte brut" />
+                    <ComboBoxItem Content="Avec mise en forme" />
+                </ComboBox>
+                <TextBlock Style="{StaticResource DescriptionReglage}"
+                           Text="Maj+Entrée colle dans l'autre mode. Les images et les fichiers ne sont pas concernés." />
+            </StackPanel>
+
+            <!-- Plafond de Temporaire -->
+            <StackPanel Spacing="6">
+                <NumberBox x:Name="ChampPlafond" Header="Plafond d'éléments dans Temporaire" Minimum="0" Maximum="1000000"
+                           SmallChange="100" LargeChange="1000" SpinButtonPlacementMode="Compact" MinWidth="240"
+                           HorizontalAlignment="Left" ValueChanged="Plafond_ValueChanged" />
+                <TextBlock Style="{StaticResource DescriptionReglage}"
+                           Text="Au-delà, les plus anciens éléments sont supprimés. 0 désactive le plafond." />
+            </StackPanel>
+
+            <!-- Thème -->
+            <ComboBox x:Name="ChoixTheme" Header="Thème" MinWidth="240" SelectionChanged="Theme_SelectionChanged">
+                <ComboBoxItem Content="Système" />
+                <ComboBoxItem Content="Clair" />
+                <ComboBoxItem Content="Sombre" />
+            </ComboBox>
+
+            <!-- Applications en chasse fixe -->
+            <StackPanel Spacing="6">
+                <TextBox x:Name="ChampChasseFixe" Header="Applications affichées en police à chasse fixe"
+                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="96" MaxHeight="160"
+                         LostFocus="ChasseFixe_LostFocus" />
+                <TextBlock Style="{StaticResource DescriptionReglage}"
+                           Text="Un nom de processus par ligne (sans .exe), par exemple WindowsTerminal ou Code." />
+            </StackPanel>
+
+            <!-- État du hook Win+V -->
+            <StackPanel Spacing="6">
+                <TextBlock Text="Interception de Win+V" Style="{StaticResource TitreReglage}" />
+                <TextBlock x:Name="EtatCrochet" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            </StackPanel>
+
+            <!-- Dossiers -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Name="BoutonDossier" Content="Ouvrir le dossier des données" Click="Dossier_Click" />
+                <Button x:Name="BoutonJournal" Content="Ouvrir le journal" Click="Journal_Click" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

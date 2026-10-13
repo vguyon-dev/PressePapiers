@@ -18,7 +18,7 @@ public sealed partial class FenetrePrincipale : Window
     private static readonly TimeSpan _delaiMemoireTaille = TimeSpan.FromMilliseconds(500);
 
     private readonly DispatcherQueueTimer _minuteurTaille;
-    private bool _voletEnSynchronisation;
+    private bool _parametresVoulus;
     private bool _ouvertureEnCours;
     private bool _fermetureAutorisee;
 
@@ -48,6 +48,9 @@ public sealed partial class FenetrePrincipale : Window
         Activated += Fenetre_Activated;
 
         PanneauApercu.Lier(Vue);
+        ZoneParametres.Lier(Vue);
+        AppliquerTheme(Vue.Reglages.Theme);
+        Vue.ParametresModifies += () => AppliquerTheme(Vue.Reglages.Theme);
         Vue.HandleOutil = Handle;
         Vue.MasquerFenetre = Masquer;
         Vue.CollageDemande += (mode, copieSeule) => _ = Vue.CollerAsync(mode, copieSeule);
@@ -77,7 +80,29 @@ public sealed partial class FenetrePrincipale : Window
     /// est affichée ou en cours d'ouverture est ignoré. Depuis l'icône ou une relance, la fenêtre d'origine n'est pas fiable :
     /// Entrée copie seulement.
     /// </summary>
-    public void AfficherPour(nint fenetreOrigine, OrigineOuverture origine)
+    public void AfficherPour(nint fenetreOrigine, OrigineOuverture origine) => Ouvrir(fenetreOrigine, origine, messageOrigine: true);
+
+    /// <summary>
+    /// Ouvre la fenêtre sur la page Paramètres (menu de l'icône), sans fenêtre d'origine ; si elle est déjà affichée,
+    /// elle est remise devant et passe sur la page Paramètres.
+    /// </summary>
+    public void AfficherParametres()
+    {
+        if (EstVisible)
+        {
+            PremierPlan.Amener(Handle);
+        }
+        else
+        {
+            Ouvrir(0, OrigineOuverture.Icone, messageOrigine: false);
+        }
+
+        _parametresVoulus = true;
+        Navigation.SelectedItem = Navigation.SettingsItem;
+        AfficherPage(parametres: true);
+    }
+
+    private void Ouvrir(nint fenetreOrigine, OrigineOuverture origine, bool messageOrigine)
     {
         if (EstVisible || _ouvertureEnCours)
         {
@@ -95,7 +120,7 @@ public sealed partial class FenetrePrincipale : Window
                             && PremierPlan.EstOrigineValide(fenetreOrigine, Handle);
         Vue.FenetreOrigine = origineFiable ? fenetreOrigine : 0;
         Vue.Affichee = true;
-        Vue.PreparerOuverture(origine);
+        Vue.PreparerOuverture(origine, messageOrigine);
         MontrerHistorique();
         PlacerAuCentre(origineFiable ? fenetreOrigine : 0);
         AppWindow.Show();
@@ -124,9 +149,6 @@ public sealed partial class FenetrePrincipale : Window
 
     /// <summary>Permet à la fenêtre de se fermer vraiment : à appeler avant de quitter l'application (menu de l'icône).</summary>
     public void AutoriserFermeture() => _fermetureAutorisee = true;
-
-    /// <summary>Ouvre la fenêtre sur la page Paramètres.</summary>
-    public void AfficherParametres() => throw new NotImplementedException("Tâche 28");
 
     private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
     {

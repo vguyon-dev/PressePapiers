@@ -79,12 +79,12 @@ public sealed partial class FenetrePrincipaleVue
     }
 
     /// <summary>Remet la fenêtre dans l'état d'une ouverture : onglet Temporaire, recherche vide, premier élément choisi.</summary>
-    internal void PreparerOuverture(OrigineOuverture origine)
+    internal void PreparerOuverture(OrigineOuverture origine, bool messageOrigine = true)
     {
         AnnonceOuverte = false;
         ChoisirOnglet(Onglets.Count > 0 ? Onglets[0] : OngletSelectionne!);
 
-        if (origine is OrigineOuverture.Icone or OrigineOuverture.Relance)
+        if (messageOrigine && origine is OrigineOuverture.Icone or OrigineOuverture.Relance)
         {
             Annoncer(InfoBarSeverity.Informational,
                      "Ouvert sans fenêtre d'origine : Entrée copie l'élément, colle-le ensuite avec Ctrl+V.");

@@ -10,33 +10,32 @@ public sealed partial class FenetrePrincipale
     // Aligne les entrées du volet sur les onglets du modèle de vue : reconstruction seulement si la liste a changé.
     private void SynchroniserVolet()
     {
-        _voletEnSynchronisation = true;
-        try
+        var onglets = Vue.Onglets;
+        var anciens = EntreesOnglets().Select(i => (OngletVue)i.Tag).ToList();
+        if (OngletVue.StructureDifferente(anciens, onglets))
         {
-            var onglets = Vue.Onglets;
-            var anciens = EntreesOnglets().Select(i => (OngletVue)i.Tag).ToList();
-            if (OngletVue.StructureDifferente(anciens, onglets))
-            {
-                ReconstruireVolet(onglets);
-            }
-
-            var entrees = EntreesOnglets();
-            for (var i = 0; i < entrees.Count; i++)
-            {
-                entrees[i].Tag = onglets[i];
-                ((InfoBadge)entrees[i].InfoBadge).Value = onglets[i].Compteur;
-            }
-
-            // L'entrée Paramètres garde la sélection tant que la page est ouverte.
-            if (!ReferenceEquals(Navigation.SelectedItem, Navigation.SettingsItem))
-            {
-                Navigation.SelectedItem = entrees.FirstOrDefault(i => ((OngletVue)i.Tag).Id == Vue.OngletSelectionne?.Id);
-            }
+            ReconstruireVolet(onglets);
         }
-        finally
+
+        var entrees = EntreesOnglets();
+        for (var i = 0; i < entrees.Count; i++)
         {
-            _voletEnSynchronisation = false;
+            entrees[i].Tag = onglets[i];
+            ((InfoBadge)entrees[i].InfoBadge).Value = onglets[i].Compteur;
         }
+
+        // L'entrée Paramètres garde la sélection tant que la page est voulue, même avant le premier chargement du volet.
+        Navigation.SelectedItem = _parametresVoulus
+            ? Navigation.SettingsItem
+            : entrees.FirstOrDefault(i => ((OngletVue)i.Tag).Id == Vue.OngletSelectionne?.Id);
+        AfficherPage(_parametresVoulus);
+    }
+
+    // Montre la liste des éléments ou la page Paramètres.
+    private void AfficherPage(bool parametres)
+    {
+        ZoneHistorique.Visibility = parametres ? Visibility.Collapsed : Visibility.Visible;
+        ZoneParametres.Visibility = parametres ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private List<NavigationViewItem> EntreesOnglets() =>
@@ -77,24 +76,28 @@ public sealed partial class FenetrePrincipale
         });
     }
 
-    private void Navigation_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
-    {
-        var parametres = args.IsSettingsSelected;
-        ZoneHistorique.Visibility = parametres ? Visibility.Collapsed : Visibility.Visible;
-        ZoneParametres.Visibility = parametres ? Visibility.Visible : Visibility.Collapsed;
-
-        if (!_voletEnSynchronisation && args.SelectedItem is NavigationViewItem { Tag: OngletVue onglet })
-        {
-            Vue.ChoisirOnglet(onglet);
-        }
-    }
-
-    // « Nouvel onglet » ne change pas la sélection : il ouvre la boîte de saisie du nom.
+    // L'utilisateur choisit une entrée du volet (clic, ou Entrée au clavier) : un onglet, les Paramètres, ou « Nouvel onglet »,
+    // qui ne se sélectionne pas et ouvre la boîte de saisie du nom. Seule cette invocation change d'onglet : la sélection posée
+    // par le code (ouverture, Ctrl+Tab, relecture) ne passe jamais par ici, ce qui évite les allers-retours.
     private void Navigation_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
-        if (args.InvokedItemContainer?.Tag is "nouvel-onglet")
+        if (args.IsSettingsInvoked)
         {
-            _ = Vue.NouvelOngletAsync();
+            _parametresVoulus = true;
+            AfficherPage(parametres: true);
+            return;
+        }
+
+        switch (args.InvokedItemContainer?.Tag)
+        {
+            case "nouvel-onglet":
+                _ = Vue.NouvelOngletAsync();
+                break;
+            case OngletVue onglet:
+                _parametresVoulus = false;
+                AfficherPage(parametres: false);
+                Vue.ChoisirOnglet(onglet);
+                break;
         }
     }
 
@@ -122,14 +125,8 @@ public sealed partial class FenetrePrincipale
     // Revient à la liste des éléments si la page Paramètres était ouverte.
     private void MontrerHistorique()
     {
-        _voletEnSynchronisation = true;
-        try
-        {
-            Navigation.SelectedItem = EntreesOnglets().FirstOrDefault(i => ((OngletVue)i.Tag).Id == Vue.OngletSelectionne?.Id);
-        }
-        finally
-        {
-            _voletEnSynchronisation = false;
-        }
+        _parametresVoulus = false;
+        AfficherPage(parametres: false);
+        Navigation.SelectedItem = EntreesOnglets().FirstOrDefault(i => ((OngletVue)i.Tag).Id == Vue.OngletSelectionne?.Id);
     }
 }

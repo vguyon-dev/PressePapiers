@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using PressePapiers.Coeur.Reglages;
 using PressePapiers.Natif;
 using Windows.Graphics;
 
@@ -23,6 +24,39 @@ public sealed partial class FenetrePrincipale
             SystemBackdrop = null;
             Racine.Background = (Brush)Application.Current.Resources["SolidBackgroundFillColorBaseBrush"];
         }
+    }
+
+    /// <summary>Applique le thème des réglages : celui de Windows (Système), clair ou sombre, à toute la fenêtre.</summary>
+    internal void AppliquerTheme(ThemeApplication theme)
+    {
+        Racine.RequestedTheme = theme switch
+        {
+            ThemeApplication.Clair => ElementTheme.Light,
+            ThemeApplication.Sombre => ElementTheme.Dark,
+            _ => ElementTheme.Default,
+        };
+
+        // Les boutons de la barre de titre suivent le thème de Windows, pas celui de la fenêtre : un thème clair forcé sur
+        // un Windows sombre les rendrait blancs sur blanc. Avec le thème Système, les couleurs par défaut reviennent.
+        if (!AppWindowTitleBar.IsCustomizationSupported())
+        {
+            return;
+        }
+
+        var barre = AppWindow.TitleBar;
+        var (encre, survol, appui) = theme switch
+        {
+            ThemeApplication.Clair => ((Windows.UI.Color?)Colors.Black, Windows.UI.Color.FromArgb(0x1A, 0, 0, 0), Windows.UI.Color.FromArgb(0x33, 0, 0, 0)),
+            ThemeApplication.Sombre => (Colors.White, Windows.UI.Color.FromArgb(0x1A, 255, 255, 255), Windows.UI.Color.FromArgb(0x33, 255, 255, 255)),
+            _ => (null, default(Windows.UI.Color), default(Windows.UI.Color)),
+        };
+        var personnalise = encre is not null;
+        barre.ButtonForegroundColor = encre;
+        barre.ButtonHoverForegroundColor = encre;
+        barre.ButtonPressedForegroundColor = encre;
+        barre.ButtonInactiveForegroundColor = personnalise ? Colors.Gray : null;
+        barre.ButtonHoverBackgroundColor = personnalise ? survol : null;
+        barre.ButtonPressedBackgroundColor = personnalise ? appui : null;
     }
 
     // Taille mémorisée en pixels logiques : la même largeur de 920 doit donner la même fenêtre à 100 % et à 150 %.
