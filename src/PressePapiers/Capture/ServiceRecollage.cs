@@ -17,6 +17,9 @@ public sealed class ServiceRecollage
 {
     private static readonly TimeSpan _pasAttente = TimeSpan.FromMilliseconds(10);
 
+    // Temps laissé à la fenêtre d'origine pour recevoir le focus clavier après le changement de premier plan.
+    private static readonly TimeSpan _delaiInstallation = TimeSpan.FromMilliseconds(40);
+
     private readonly EcrivainPressePapiers _ecrivain;
     private readonly DepotHistorique _depot;
     private readonly IJournal _journal;
@@ -42,11 +45,15 @@ public sealed class ServiceRecollage
     /// Spec, section 10.2 : écriture, contrôle de la fenêtre et de son niveau, premier plan, attente des modificateurs, Ctrl+V.
     /// </summary>
     /// <remarks>
-    /// L'élément est toujours écrit en premier et remonte en tête de son onglet dès que l'écriture réussit, collé ou non.
-    /// <paramref name="masquerFenetre"/> n'est appelée que lorsque la fenêtre doit disparaître : après un collage, et
-    /// quand la cible est plus élevée (notification « Copié, colle avec Ctrl+V »). Pour les autres copies seules, la
-    /// fenêtre reste ouverte et l'appelant affiche son message. <see cref="IssueCollage.Echec"/> : écriture
-    /// impossible, premier plan refusé, ou frappe non envoyée ; la fenêtre n'est alors pas masquée.
+    /// L'élément est toujours écrit en premier et remonte en tête de son onglet dès que l'écriture réussit, collé ou non
+    /// (un échec de cette remontée est noté au journal sans empêcher le collage).
+    /// <paramref name="masquerFenetre"/> est appelée quand la fenêtre doit disparaître : pour un collage, dès que la fenêtre
+    /// d'origine a repris le premier plan (avant l'attente des modificateurs et l'envoi de Ctrl+V), et quand la cible est
+    /// plus élevée. Pour les autres copies seules, la fenêtre reste ouverte et l'appelant affiche son message.
+    /// Fenêtre encore affichée, <see cref="IssueCollage.Echec"/> signifie écriture impossible ou premier plan refusé.
+    /// Fenêtre déjà masquée, l'appelant doit signaler l'issue hors de la fenêtre : <see cref="IssueCollage.Echec"/> si le
+    /// premier plan a changé avant Ctrl+V ou si la frappe n'a pas été insérée, <see cref="IssueCollage.CopieDemandee"/>
+    /// si des modificateurs sont restés enfoncés (l'élément est copié, Ctrl+V n'est pas envoyé).
     /// </remarks>
     public async Task<IssueCollage> CollerAsync(Element element, ModeCollage mode, nint fenetreOrigine, bool copieSeule,
                                                 nint hwndOutil, Action masquerFenetre)
@@ -63,7 +70,7 @@ public sealed class ServiceRecollage
                 return IssueCollage.Echec;
             }
 
-            _depot.MarquerUtilise(element.Id);
+            MarquerUtilise(element);
 
             var origineConnue = fenetreOrigine != 0 && PremierPlan.EstOrigineValide(fenetreOrigine, hwndOutil);
             var existe = origineConnue && NatifSaisie.IsWindow(fenetreOrigine);
@@ -105,7 +112,16 @@ public sealed class ServiceRecollage
         }
 
         masquerFenetre();
-        await AttendreModificateursRelachesAsync();
+
+        // Une frappe envoyée aussitôt peut encore partir vers l'ancienne file d'entrée : on laisse le focus s'installer.
+        await Task.Delay(_delaiInstallation);
+
+        // Avec Maj ou Win tenue, Ctrl+V deviendrait Ctrl+Maj+V ou Win+Ctrl+V : mieux vaut laisser l'utilisateur coller.
+        if (!await AttendreModificateursRelachesAsync())
+        {
+            _journal.Avertissement("Des modificateurs sont restés enfoncés plus d'une seconde : Ctrl+V n'est pas envoyé, l'élément reste copié.");
+            return IssueCollage.CopieDemandee;
+        }
 
         // Coller dans une autre fenêtre que celle prévue serait pire que ne pas coller.
         if (PremierPlan.FenetreActive() != fenetreOrigine)
@@ -123,21 +139,35 @@ public sealed class ServiceRecollage
         return IssueCollage.Colle;
     }
 
+    // La remontée en tête n'est qu'un classement : son échec ne doit pas priver l'utilisateur du collage.
+    private void MarquerUtilise(Element element)
+    {
+        try
+        {
+            _depot.MarquerUtilise(element.Id);
+        }
+        catch (Exception exception)
+        {
+            _journal.Avertissement($"L'élément {element.Id} n'a pas pu remonter en tête de son onglet ; le collage continue.", exception);
+        }
+    }
+
     // Win, Maj, Ctrl ou Alt encore tenus (Entrée avec Maj, ou Win+V pas encore relâchée) fausseraient le raccourci :
-    // on attend leur relâchement, une seconde au plus, puis on colle quand même.
-    private async Task AttendreModificateursRelachesAsync()
+    // on attend leur relâchement, une seconde au plus. Renvoie faux s'ils sont toujours enfoncés.
+    private async Task<bool> AttendreModificateursRelachesAsync()
     {
         var chrono = Stopwatch.StartNew();
         while (ModificateursEnfonces())
         {
             if (chrono.Elapsed >= AttenteMaximaleModificateurs)
             {
-                _journal.Avertissement("Des modificateurs sont restés enfoncés plus d'une seconde ; Ctrl+V est envoyé quand même.");
-                return;
+                return false;
             }
 
             await Task.Delay(_pasAttente);
         }
+
+        return true;
     }
 
     private static bool ModificateursReelsEnfonces()
@@ -148,7 +178,8 @@ public sealed class ServiceRecollage
         return false;
     }
 
-    // Ctrl enfoncée, V enfoncée et relâchée, Ctrl relâchée : une seule frappe atomique pour Windows.
+    // Ctrl enfoncée, V enfoncée et relâchée, Ctrl relâchée : une seule frappe atomique pour Windows. Le code de balayage
+    // accompagne la touche virtuelle : les clients Bureau à distance et les machines virtuelles ne lisent que lui.
     private static bool EnvoyerCtrlV()
     {
         var entrees = new NatifSaisie.Entree[4];
@@ -164,6 +195,7 @@ public sealed class ServiceRecollage
     {
         entree.Type = NatifSaisie.INPUT_KEYBOARD;
         entree.Clavier.Touche = touche;
+        entree.Clavier.CodeBalayage = (ushort)NatifSaisie.MapVirtualKey(touche, NatifSaisie.MAPVK_VK_TO_VSC);
         entree.Clavier.Drapeaux = relache ? NatifSaisie.KEYEVENTF_KEYUP : 0;
     }
 }

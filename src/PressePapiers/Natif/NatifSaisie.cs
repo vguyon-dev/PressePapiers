@@ -8,6 +8,9 @@ internal static partial class NatifSaisie
     internal const uint INPUT_KEYBOARD = 1;
     internal const uint KEYEVENTF_KEYUP = 0x0002;
 
+    /// <summary>MAPVK_VK_TO_VSC : code de touche virtuelle vers code de balayage.</summary>
+    internal const uint MAPVK_VK_TO_VSC = 0;
+
     internal const ushort VK_CONTROL = 0x11;
     internal const ushort VK_V = 0x56;
 
@@ -38,6 +41,10 @@ internal static partial class NatifSaisie
 
     [LibraryImport("user32.dll")]
     internal static partial short GetAsyncKeyState(int touche);
+
+    /// <summary>Traduit une touche selon <paramref name="type"/> (MAPVK_*) ; 0 si la traduction est impossible.</summary>
+    [LibraryImport("user32.dll", EntryPoint = "MapVirtualKeyW")]
+    internal static partial uint MapVirtualKey(uint code, uint type);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
