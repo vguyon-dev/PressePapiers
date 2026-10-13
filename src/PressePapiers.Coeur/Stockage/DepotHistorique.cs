@@ -8,9 +8,9 @@ using PressePapiers.Coeur.Recherche;
 namespace PressePapiers.Coeur.Stockage;
 
 /// <summary>
-/// Dépôt des onglets et des éléments, sûr entre fils : la connexion SQLite, qui ne l'est pas, sert elle-même de verrou,
-/// partagé avec <see cref="Recherche.MoteurRecherche"/>.
-/// Onglets par la tâche 4, éléments par la tâche 5, suppression, purge, plafond, index et méta par la tâche 6.
+/// Dépôt des onglets et des éléments de l'historique : ajout avec dédoublonnage dans Temporaire, nommage, suppression,
+/// purge, plafond de Temporaire, index plein texte et table <c>meta</c>. Sûr entre fils : la connexion SQLite, qui ne l'est
+/// pas, sert elle-même de verrou, partagé avec <see cref="Recherche.MoteurRecherche"/>. Les dates sont écrites en UTC au format « O » pour que leur tri par texte soit chronologique.
 /// </summary>
 public sealed class DepotHistorique
 {
@@ -172,8 +172,7 @@ public sealed class DepotHistorique
     {
         lock (_verrou)
         {
-            var nombre = Scalaire("SELECT COUNT(*) FROM element WHERE onglet_id = $onglet", null, ("$onglet", ongletId));
-            return Convert.ToInt32(nombre, CultureInfo.InvariantCulture);
+            return Compter(ongletId);
         }
     }
 
@@ -280,26 +279,158 @@ public sealed class DepotHistorique
         Notifier();
     }
 
-    /// <summary>Supprime un élément et son PNG.</summary>
-    public void Supprimer(long elementId) => throw new NotImplementedException("Tâche 6");
+    /// <summary>
+    /// Supprime un élément et son PNG ; sans effet si l'élément n'existe pas. Un PNG déjà absent n'est pas une erreur,
+    /// un PNG verrouillé est noté au journal et laissé en place : la ligne part dans les deux cas.
+    /// </summary>
+    public void Supprimer(long elementId)
+    {
+        bool supprime;
+        lock (_verrou)
+        {
+            var image = Scalaire("SELECT image_fichier FROM element WHERE id = $id", null, ("$id", elementId));
+            supprime = Executer("DELETE FROM element WHERE id = $id", null, ("$id", elementId)) > 0;
+            if (supprime && image is string nom)
+            {
+                SupprimerFichiersImages([nom]);
+            }
+        }
 
-    /// <summary>Chemin complet du PNG d'un élément ; <see cref="InvalidOperationException"/> s'il n'a pas d'image.</summary>
-    public string CheminImage(Element element) => throw new NotImplementedException("Tâche 6");
+        if (supprime)
+        {
+            Notifier();
+        }
+    }
 
-    /// <summary>Supprime les éléments de Temporaire et leurs PNG ; renvoie leur nombre.</summary>
-    public int PurgerTemporaire() => throw new NotImplementedException("Tâche 6");
+    /// <summary>Chemin complet du PNG d'un élément, toujours dans le dossier des images.</summary>
+    /// <exception cref="InvalidOperationException">L'élément n'a pas d'image.</exception>
+    public string CheminImage(Element element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        if (string.IsNullOrEmpty(element.ImageFichier))
+        {
+            throw new InvalidOperationException("Cet élément n'a pas d'image.");
+        }
 
-    /// <summary>Supprime les plus anciens éléments de Temporaire au-delà du plafond (0 = désactivé) ; renvoie leur nombre.</summary>
-    public int AppliquerPlafond(int plafond) => throw new NotImplementedException("Tâche 6");
+        // Même précaution qu'à la suppression : seul le nom du fichier compte, jamais un chemin venu de la base.
+        return Path.Combine(_dossiers.Images, Path.GetFileName(element.ImageFichier));
+    }
 
-    /// <summary>Reconstruit l'index plein texte.</summary>
-    public void ReconstruireIndex() => throw new NotImplementedException("Tâche 6");
+    /// <summary>
+    /// Supprime les éléments de Temporaire et leurs PNG ; renvoie leur nombre.
+    /// Les éléments nommés, rangés dans d'autres onglets, ne sont jamais touchés.
+    /// </summary>
+    public int PurgerTemporaire()
+    {
+        int supprimes;
+        lock (_verrou)
+        {
+            var images = new List<string>();
+            using (var transaction = _connexion.BeginTransaction())
+            {
+                supprimes = SupprimerElementsDe(OngletTemporaire.Id, transaction, images);
+                transaction.Commit();
+            }
 
-    /// <summary>Lit une valeur de la table <c>meta</c>.</summary>
-    public string? LireMeta(string cle) => throw new NotImplementedException("Tâche 6");
+            SupprimerFichiersImages(images);
+        }
 
-    /// <summary>Écrit une valeur dans la table <c>meta</c>.</summary>
-    public void EcrireMeta(string cle, string valeur) => throw new NotImplementedException("Tâche 6");
+        if (supprimes > 0)
+        {
+            Notifier();
+        }
+
+        return supprimes;
+    }
+
+    /// <summary>
+    /// Supprime les plus anciens éléments de Temporaire (par date d'usage, puis par Id) au-delà du plafond ;
+    /// un plafond de 0 ou moins est désactivé. Renvoie le nombre d'éléments supprimés.
+    /// </summary>
+    public int AppliquerPlafond(int plafond)
+    {
+        if (plafond <= 0)
+        {
+            return 0;
+        }
+
+        int supprimes;
+        lock (_verrou)
+        {
+            var exces = Compter(OngletTemporaire.Id) - plafond;
+            if (exces <= 0)
+            {
+                return 0;
+            }
+
+            var images = new List<string>();
+            using (var transaction = _connexion.BeginTransaction())
+            {
+                // Les plus anciens sont ceux qui viennent en dernier dans ListerElements : même tri, à l'envers.
+                const string plusAnciens =
+                    "SELECT id FROM element WHERE onglet_id = $onglet ORDER BY date_usage ASC, id ASC LIMIT $exces";
+                using (var commande = Preparer(
+                           $"SELECT image_fichier FROM element WHERE image_fichier IS NOT NULL AND id IN ({plusAnciens})",
+                           transaction, ("$onglet", OngletTemporaire.Id), ("$exces", exces)))
+                using (var lecteur = commande.ExecuteReader())
+                {
+                    while (lecteur.Read())
+                    {
+                        images.Add(lecteur.GetString(0));
+                    }
+                }
+
+                supprimes = Executer($"DELETE FROM element WHERE id IN ({plusAnciens})", transaction,
+                                     ("$onglet", OngletTemporaire.Id), ("$exces", exces));
+                transaction.Commit();
+            }
+
+            SupprimerFichiersImages(images);
+        }
+
+        Notifier();
+        return supprimes;
+    }
+
+    /// <summary>
+    /// Reconstruit l'index plein texte à partir de la table <c>element</c> (réparation d'un index désynchronisé).
+    /// </summary>
+    public void ReconstruireIndex()
+    {
+        lock (_verrou)
+        {
+            Executer("INSERT INTO element_fts(element_fts) VALUES ('rebuild')", null);
+        }
+
+        Notifier();
+    }
+
+    /// <summary>Lit une valeur de la table <c>meta</c> ; null si la clé n'existe pas.</summary>
+    public string? LireMeta(string cle)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(cle);
+
+        lock (_verrou)
+        {
+            return Scalaire("SELECT valeur FROM meta WHERE cle = $cle", null, ("$cle", cle)) as string;
+        }
+    }
+
+    /// <summary>Écrit une valeur dans la table <c>meta</c>, en remplaçant celle de la clé si elle existe.</summary>
+    public void EcrireMeta(string cle, string valeur)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(cle);
+        ArgumentNullException.ThrowIfNull(valeur);
+
+        lock (_verrou)
+        {
+            Executer(
+                "INSERT INTO meta (cle, valeur) VALUES ($cle, $valeur) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
+                null, ("$cle", cle), ("$valeur", valeur));
+        }
+
+        Notifier();
+    }
 
     // ---- Onglets : lecture ----
 
@@ -349,6 +480,11 @@ public sealed class DepotHistorique
     }
 
     // ---- Éléments : lecture ----
+
+    private int Compter(long ongletId) =>
+        Convert.ToInt32(
+            Scalaire("SELECT COUNT(*) FROM element WHERE onglet_id = $onglet", null, ("$onglet", ongletId)),
+            CultureInfo.InvariantCulture);
 
     private Element? LireElement(long id) => LireElements(null, "WHERE id = $id", ("$id", id)).FirstOrDefault();
 
@@ -493,7 +629,7 @@ public sealed class DepotHistorique
             ? Normalisation.TexteRecherche(nom, null, texte?.Split('\n', StringSplitOptions.RemoveEmptyEntries), application)
             : Normalisation.TexteRecherche(nom, texte, null, application);
 
-    // ---- Suppression partagée entre les onglets et (tâche 6) la purge ----
+    // ---- Suppression partagée entre les onglets et la purge de Temporaire ----
 
     // Supprime les éléments d'un onglet dans la transaction donnée et ajoute les noms de leurs PNG à la liste.
     // Les déclencheurs de la base tiennent l'index plein texte à jour ligne par ligne.
