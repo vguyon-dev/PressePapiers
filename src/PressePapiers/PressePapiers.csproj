@@ -18,6 +18,8 @@
     <!-- Main personnalisé (Program.cs) : instance unique avant toute création de fenêtre. -->
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- LibraryImport génère des appels natifs qui exigent le code non sûr. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
