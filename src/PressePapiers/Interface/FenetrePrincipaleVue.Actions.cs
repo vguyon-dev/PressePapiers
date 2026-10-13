@@ -14,6 +14,23 @@ public sealed partial class FenetrePrincipaleVue
     /// <summary>Chemin complet du PNG d'un élément image.</summary>
     internal string CheminImage(Element element) => _depot.CheminImage(element);
 
+    /// <summary>
+    /// Lit l'élément complet (aperçu, collage) : la liste ne garde que des résumés. Renvoie null si l'élément n'existe
+    /// plus ou si la lecture échoue (notée au journal).
+    /// </summary>
+    internal Element? LireElement(long id)
+    {
+        try
+        {
+            return _depot.Lire(id);
+        }
+        catch (Exception exception)
+        {
+            _journal.Erreur($"Impossible de lire l'élément {id}.", exception);
+            return null;
+        }
+    }
+
     /// <summary>Boîtes de dialogue de la fenêtre ; sans elles, une action qui doit confirmer ne fait rien.</summary>
     public IDialogues? Dialogues { get; set; }
 
@@ -29,7 +46,7 @@ public sealed partial class FenetrePrincipaleVue
     [ObservableProperty]
     public partial string AnnonceMessage { get; set; } = string.Empty;
 
-    /// <summary>Levé pour coller ou copier l'élément choisi : mode de collage voulu, copie seule ou non. Branché par la tâche 27.</summary>
+    /// <summary>Levé pour coller ou copier l'élément choisi : mode de collage voulu, copie seule ou non. Branché par la fenêtre.</summary>
     public event Action<ModeCollage, bool>? CollageDemande;
 
     /// <summary>Mode de collage qui change celui des réglages : celui de Maj+Entrée.</summary>
@@ -39,12 +56,22 @@ public sealed partial class FenetrePrincipaleVue
     /// <summary>Libellé du bouton qui colle dans l'autre mode.</summary>
     public string LibelleAutreMode => ModeAlternatif == ModeCollage.TexteSeul ? "Texte brut" : "Avec mise en forme";
 
-    /// <summary>Affiche un message en haut de la zone de contenu.</summary>
+    /// <summary>
+    /// Affiche un message en haut de la zone de contenu. Un message de réussite se ferme seul après
+    /// <see cref="DelaiAnnonceReussie"/> ; les autres restent jusqu'à ce que l'utilisateur les ferme.
+    /// </summary>
     public void Annoncer(InfoBarSeverity gravite, string message)
     {
         AnnonceGravite = gravite;
         AnnonceMessage = message;
         AnnonceOuverte = true;
+
+        // Redémarrer la minuterie à chaque message : un message récent ne doit pas être fermé par l'échéance du précédent.
+        _minuteurAnnonce.Stop();
+        if (gravite == InfoBarSeverity.Success)
+        {
+            _minuteurAnnonce.Start();
+        }
     }
 
     /// <summary>Demande le collage (ou la copie seule) de l'élément choisi, dans le mode des réglages ou dans l'autre.</summary>

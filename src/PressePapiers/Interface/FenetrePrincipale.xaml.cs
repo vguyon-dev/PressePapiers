@@ -36,11 +36,12 @@ public sealed partial class FenetrePrincipale : Window
         SetTitleBar(ZoneTitre);
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "icone-normale.ico"));
         AppliquerTailleMemorisee();
+        AppliquerPresentation();
 
         _minuteurTaille = DispatcherQueue.GetForCurrentThread().CreateTimer();
         _minuteurTaille.Interval = _delaiMemoireTaille;
         _minuteurTaille.IsRepeating = false;
-        _minuteurTaille.Tick += (_, _) => MemoriserTaille();
+        ExecutionProtegee.Brancher(_minuteurTaille, Vue.Journal, MemoriserTaille, "la mémorisation de la taille");
         AppWindow.Changed += AppWindow_Changed;
 
         // Cycle de vie : la croix masque la fenêtre au lieu de la fermer, la perte du focus la masque aussi.
@@ -53,7 +54,11 @@ public sealed partial class FenetrePrincipale : Window
         Vue.ParametresModifies += () => AppliquerTheme(Vue.Reglages.Theme);
         Vue.HandleOutil = Handle;
         Vue.MasquerFenetre = Masquer;
-        Vue.CollageDemande += (mode, copieSeule) => _ = Vue.CollerAsync(mode, copieSeule);
+        Vue.CollageDemande += (mode, copieSeule) =>
+            ExecutionProtegee.Lancer(Vue.Journal, () => Vue.CollerAsync(mode, copieSeule), "le collage");
+
+        // Après un enregistrement, le curseur revient à la recherche : l'utilisateur peut enchaîner au clavier.
+        PanneauApercu.ElementEnregistre += () => ChampRecherche.Focus(FocusState.Programmatic);
         Vue.Dialogues = new GestionnaireDialogues(() => Content as FrameworkElement, () => EstVisible);
         Vue.Rafraichi += SynchroniserVolet;
         SynchroniserVolet();
@@ -70,6 +75,24 @@ public sealed partial class FenetrePrincipale : Window
 
     /// <summary>Vrai tant que la fenêtre est affichée.</summary>
     public bool EstVisible => AppWindow.IsVisible;
+
+    /// <summary>Vrai pendant l'ouverture elle-même (jusqu'à la fin de la file de messages qui suit l'affichage).</summary>
+    public bool OuvertureEnCours => _ouvertureEnCours;
+
+    /// <summary>Vrai si la fenêtre est la fenêtre active du système.</summary>
+    public bool EstAuPremierPlan => PremierPlan.FenetreActive() == Handle;
+
+    /// <summary>
+    /// Remet devant une fenêtre déjà affichée mais passée derrière (boîte de dialogue ouverte puis changement d'application,
+    /// premier plan refusé à l'ouverture). Si Windows refuse, <see cref="PremierPlanRefuse"/> est levé.
+    /// </summary>
+    public void RamenerAuPremierPlan()
+    {
+        if (!PremierPlan.Amener(Handle))
+        {
+            PremierPlanRefuse?.Invoke();
+        }
+    }
 
     /// <summary>Levé quand Windows refuse de donner le premier plan à la fenêtre : l'application doit le dire par l'icône.</summary>
     public event Action? PremierPlanRefuse;
@@ -116,32 +139,54 @@ public sealed partial class FenetrePrincipale : Window
         }
 
         _ouvertureEnCours = true;
-        var origineFiable = origine is OrigineOuverture.WinV or OrigineOuverture.RaccourciSecours
-                            && PremierPlan.EstOrigineValide(fenetreOrigine, Handle);
-        Vue.FenetreOrigine = origineFiable ? fenetreOrigine : 0;
-        Vue.Affichee = true;
-        Vue.PreparerOuverture(origine, messageOrigine);
-        MontrerHistorique();
-        PlacerAuCentre(origineFiable ? fenetreOrigine : 0);
-        AppWindow.Show();
-        var premierPlanObtenu = PremierPlan.Amener(Handle);
-        if (!premierPlanObtenu)
+        var rattrapageProgramme = false;
+        try
         {
-            PremierPlanRefuse?.Invoke();
-        }
-
-        ChampRecherche.Focus(FocusState.Programmatic);
-
-        // Les pertes de focus survenues pendant l'ouverture elle-même sont ignorées, donc on les rattrape ici : une fenêtre
-        // qui a eu le premier plan puis l'a perdu avant la fin de l'ouverture ne doit pas rester ouverte sans focus.
-        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
-        {
-            _ouvertureEnCours = false;
-            if (premierPlanObtenu && EstVisible && PremierPlan.FenetreActive() != Handle)
+            var origineFiable = origine is OrigineOuverture.WinV or OrigineOuverture.RaccourciSecours
+                                && PremierPlan.EstOrigineValide(fenetreOrigine, Handle);
+            Vue.FenetreOrigine = origineFiable ? fenetreOrigine : 0;
+            Vue.Affichee = true;
+            Vue.PreparerOuverture(origine, messageOrigine);
+            MontrerHistorique();
+            PlacerAuCentre(origineFiable ? fenetreOrigine : 0);
+            AppWindow.Show();
+            var premierPlanObtenu = PremierPlan.Amener(Handle);
+            if (!premierPlanObtenu)
             {
-                Masquer();
+                PremierPlanRefuse?.Invoke();
             }
-        });
+
+            ChampRecherche.Focus(FocusState.Programmatic);
+
+            // Les pertes de focus survenues pendant l'ouverture elle-même sont ignorées, donc on les rattrape ici : une fenêtre
+            // qui a eu le premier plan puis l'a perdu avant la fin de l'ouverture ne doit pas rester ouverte sans focus.
+            rattrapageProgramme = ExecutionProtegee.Poster(DispatcherQueue, Vue.Journal, () =>
+            {
+                _ouvertureEnCours = false;
+                if (premierPlanObtenu && EstVisible && PremierPlan.FenetreActive() != Handle)
+                {
+                    Masquer();
+                }
+            }, "la fin de l'ouverture", DispatcherQueuePriority.Low);
+        }
+        catch (Exception)
+        {
+            // L'ouverture a échoué avant l'affichage : le modèle de vue redevient celui d'une fenêtre masquée.
+            if (!EstVisible)
+            {
+                Vue.Affichee = false;
+            }
+
+            throw;
+        }
+        finally
+        {
+            // Sans rattrapage programmé, rien ne rabaisserait le drapeau : la fenêtre ne pourrait plus jamais s'ouvrir.
+            if (!rattrapageProgramme)
+            {
+                _ouvertureEnCours = false;
+            }
+        }
     }
 
     /// <summary>Masque la fenêtre sans terminer l'application.</summary>

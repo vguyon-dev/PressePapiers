@@ -43,7 +43,7 @@ public sealed partial class FenetrePrincipale
                 PanneauApercu.FocaliserNom();
                 break;
             case ActionTouche.SupprimerElement:
-                _ = Vue.SupprimerSelectionAsync();
+                ExecutionProtegee.Lancer(Vue.Journal, Vue.SupprimerSelectionAsync, "la suppression de l'élément");
                 break;
             case ActionTouche.OngletSuivant:
                 Vue.OngletRelatif(1);

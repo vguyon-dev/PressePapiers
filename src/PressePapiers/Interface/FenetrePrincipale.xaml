@@ -66,6 +66,7 @@
 
                             <AutoSuggestBox x:Name="ChampRecherche" Grid.Row="0" Margin="0,0,12,0"
                                             PlaceholderText="Rechercher dans tout l'historique"
+                                            AutomationProperties.Name="Rechercher dans tout l'historique"
                                             QueryIcon="Find"
                                             Text="{x:Bind Vue.Recherche, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
@@ -76,6 +77,7 @@
                                        Visibility="{x:Bind Vue.LegendeVisible, Mode=OneWay}" />
 
                             <ListView x:Name="Liste" Grid.Row="2" Margin="0,4,0,0"
+                                      AutomationProperties.Name="Éléments de l'historique"
                                       DoubleTapped="Liste_DoubleTapped" CharacterReceived="Liste_CharacterReceived"
                                   ItemsSource="{x:Bind Vue.Elements, Mode=OneWay}"
                                       SelectedItem="{x:Bind Vue.ElementSelectionne, Mode=TwoWay}">

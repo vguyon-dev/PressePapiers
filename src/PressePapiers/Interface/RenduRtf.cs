@@ -11,6 +11,24 @@ internal static class RenduRtf
     /// <summary>Au-delà, l'aperçu reste en texte brut : charger un RTF de plusieurs mégaoctets gèlerait l'interface.</summary>
     public const int TailleMaximale = 1024 * 1024;
 
+    /// <summary>Vide la boîte (libère le texte d'un gros RTF) puis la remet en lecture seule.</summary>
+    public static void Vider(RichEditBox boite)
+    {
+        try
+        {
+            boite.IsReadOnly = false;
+            boite.Document.SetText(TextSetOptions.None, string.Empty);
+        }
+        catch (Exception)
+        {
+            // Libérer la mémoire est un plus : une boîte qui refuse d'être vidée sera remplie à la prochaine sélection.
+        }
+        finally
+        {
+            boite.IsReadOnly = true;
+        }
+    }
+
     /// <summary>
     /// Charge le RTF puis remet la boîte en lecture seule, quoi qu'il arrive : le contrôle ne se remplit que lorsqu'il
     /// est modifiable. Renvoie faux si le RTF est trop gros, refusé ou ne donne aucun texte : l'appelant montre alors

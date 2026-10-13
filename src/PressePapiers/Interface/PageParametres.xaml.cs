@@ -1,3 +1,4 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -9,10 +10,24 @@ namespace PressePapiers.Interface;
 /// <summary>
 /// Page Paramètres (entrée du volet) : raccourci de secours, démarrage avec Windows, mise en forme par défaut, plafond de
 /// Temporaire, thème, applications à chasse fixe, état du hook Win+V, accès aux dossiers. Chaque réglage s'enregistre dès
-/// qu'il est modifié, par <see cref="FenetrePrincipaleVue.EnregistrerParametres"/>.
+/// qu'il est modifié, par <see cref="FenetrePrincipaleVue.EnregistrerParametres"/> ; le plafond et la liste des applications
+/// à chasse fixe, qui se saisissent au clavier, attendent une courte pause de la frappe (et se valident à la perte du focus
+/// et au masquage de la fenêtre).
 /// </summary>
 public sealed partial class PageParametres : UserControl
 {
+    /// <summary>Pause de la saisie avant d'enregistrer la liste des applications à chasse fixe.</summary>
+    private static readonly TimeSpan _delaiChasseFixe = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Pause avant de valider le plafond : plus longue que celle d'une frappe, pour que des clics répétés sur les flèches
+    /// du champ numérique ne proposent pas un plafond à chaque pas.
+    /// </summary>
+    private static readonly TimeSpan _delaiPlafond = TimeSpan.FromSeconds(1);
+
+    private readonly DispatcherQueueTimer _minuteurChasseFixe;
+    private readonly DispatcherQueueTimer _minuteurPlafond;
+    private bool _plafondEnCours;
     private FenetrePrincipaleVue? _vue;
 
     // Vrai pendant le remplissage des contrôles : leurs événements de changement ne sont alors pas des choix de l'utilisateur.
@@ -22,12 +37,22 @@ public sealed partial class PageParametres : UserControl
     public PageParametres()
     {
         InitializeComponent();
+        var file = DispatcherQueue.GetForCurrentThread();
+        _minuteurChasseFixe = file.CreateTimer();
+        _minuteurChasseFixe.Interval = _delaiChasseFixe;
+        _minuteurChasseFixe.IsRepeating = false;
+        _minuteurPlafond = file.CreateTimer();
+        _minuteurPlafond.Interval = _delaiPlafond;
+        _minuteurPlafond.IsRepeating = false;
     }
 
     /// <summary>Branche la page sur le modèle de vue et affiche les réglages en vigueur.</summary>
     public void Lier(FenetrePrincipaleVue vue)
     {
         _vue = vue;
+        ExecutionProtegee.Brancher(_minuteurChasseFixe, vue.Journal, () => EnregistrerChasseFixe(reecrire: false), "l'enregistrement des applications à chasse fixe");
+        ExecutionProtegee.Brancher(_minuteurPlafond, vue.Journal, ValiderPlafond, "la validation du plafond");
+        vue.FenetreMasquee += SurFenetreMasquee;
         vue.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(FenetrePrincipaleVue.EtatCrochet))
@@ -136,17 +161,72 @@ public sealed partial class PageParametres : UserControl
             return;
         }
 
-        // Une zone vidée donne NaN : on revient à la valeur enregistrée plutôt que d'inventer un plafond.
-        if (double.IsNaN(args.NewValue))
+        // Chaque pas des flèches repousse l'échéance : seule la valeur sur laquelle l'utilisateur s'arrête est validée.
+        _minuteurPlafond.Stop();
+        _minuteurPlafond.Start();
+    }
+
+    private void Plafond_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (!_chargement && _minuteurPlafond.IsRunning)
         {
-            _chargement = true;
-            sender.Value = _vue.Reglages.PlafondTemporaire;
-            _chargement = false;
+            ValiderPlafond();
+        }
+    }
+
+    // Valide la valeur affichée. Une zone vidée donne NaN : on revient à la valeur enregistrée plutôt que d'inventer un
+    // plafond. Un plafond qui supprimerait des éléments passe par la confirmation de la vue ; refusé, il est retiré du champ.
+    private void ValiderPlafond()
+    {
+        _minuteurPlafond.Stop();
+        if (_vue is null || _plafondEnCours)
+        {
             return;
         }
 
-        var plafond = (int)Math.Clamp(args.NewValue, 0, 1_000_000);
-        _vue.EnregistrerParametres(p => p with { PlafondTemporaire = plafond });
+        if (double.IsNaN(ChampPlafond.Value))
+        {
+            RestaurerPlafond();
+            return;
+        }
+
+        var plafond = (int)Math.Clamp(ChampPlafond.Value, 0, 1_000_000);
+        if (plafond == _vue.Reglages.PlafondTemporaire)
+        {
+            return;
+        }
+
+        _plafondEnCours = true;
+        ExecutionProtegee.Lancer(_vue.Journal, () => ChangerPlafondAsync(plafond), "le changement du plafond");
+    }
+
+    private async Task ChangerPlafondAsync(int plafond)
+    {
+        try
+        {
+            if (!await _vue!.ChangerPlafondAsync(plafond))
+            {
+                RestaurerPlafond();
+            }
+        }
+        finally
+        {
+            _plafondEnCours = false;
+        }
+    }
+
+    // Le champ reprend le plafond enregistré, sans que ce changement soit pris pour une saisie.
+    private void RestaurerPlafond()
+    {
+        _chargement = true;
+        try
+        {
+            ChampPlafond.Value = _vue!.Reglages.PlafondTemporaire;
+        }
+        finally
+        {
+            _chargement = false;
+        }
     }
 
     private void Theme_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -158,9 +238,35 @@ public sealed partial class PageParametres : UserControl
         }
     }
 
-    // La liste s'enregistre quand on quitte la zone (et non à chaque frappe) : un nom à moitié tapé ne ferait rien de bon.
-    private void ChasseFixe_LostFocus(object sender, RoutedEventArgs e)
+    // La liste s'enregistre 500 ms après la dernière frappe, quand on quitte la zone et quand la fenêtre se masque : fermer
+    // la fenêtre pendant la saisie ne perd rien. La zone n'est réécrite qu'à la perte du focus, jamais sous les doigts.
+    private void ChasseFixe_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (_chargement || _vue is null)
+        {
+            return;
+        }
+
+        _minuteurChasseFixe.Stop();
+        _minuteurChasseFixe.Start();
+    }
+
+    private void ChasseFixe_LostFocus(object sender, RoutedEventArgs e) => EnregistrerChasseFixe(reecrire: true);
+
+    // Fenêtre masquée : ce qui est en cours de saisie est enregistré ; un plafond encore en attente est validé (sa
+    // confirmation ne peut plus s'afficher, donc un plafond qui supprimerait des éléments est abandonné).
+    private void SurFenetreMasquee()
+    {
+        EnregistrerChasseFixe(reecrire: true);
+        if (_minuteurPlafond.IsRunning)
+        {
+            ValiderPlafond();
+        }
+    }
+
+    private void EnregistrerChasseFixe(bool reecrire)
+    {
+        _minuteurChasseFixe.Stop();
         if (_chargement || _vue is null)
         {
             return;
@@ -176,7 +282,20 @@ public sealed partial class PageParametres : UserControl
             _vue.EnregistrerParametres(p => p with { ApplicationsChasseFixe = noms });
         }
 
-        ChampChasseFixe.Text = string.Join(Environment.NewLine, _vue.Reglages.ApplicationsChasseFixe);
+        if (!reecrire)
+        {
+            return;
+        }
+
+        _chargement = true;
+        try
+        {
+            ChampChasseFixe.Text = string.Join(Environment.NewLine, _vue.Reglages.ApplicationsChasseFixe);
+        }
+        finally
+        {
+            _chargement = false;
+        }
     }
 
     private void Dossier_Click(object sender, RoutedEventArgs e) => _vue?.OuvrirDossierDonnees();

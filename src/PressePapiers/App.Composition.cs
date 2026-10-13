@@ -20,6 +20,7 @@ public sealed partial class App
     private static readonly TimeSpan _periodeEtatCrochet = TimeSpan.FromMinutes(1);
 
     private (bool Actif, string? Raison)? _etatAffiche;
+    private int? _plafondApplique;
 
     // La fenêtre est créée sans être affichée : ni Show(false) préalable ni Activate, l'essai du point 2 de la spec
     // (section 16) a montré que AppWindow.Show puis PremierPlan.Amener suffisent à la première ouverture. Le relais est
@@ -85,15 +86,33 @@ public sealed partial class App
         _minuterieCrochet.Start();
     }
 
-    // Win+V ou raccourci de secours : ignoré si la fenêtre est déjà affichée, ou moins de 300 ms après une ouverture.
+    // Win+V ou raccourci de secours. Fenêtre masquée : elle s'ouvre. Fenêtre affichée mais passée derrière (boîte de
+    // dialogue ouverte puis changement d'application, premier plan refusé à l'ouverture) : elle est ramenée devant, sans
+    // quoi le raccourci resterait sans effet. Le signal n'est ignoré que dans la fenêtre de l'anti-rebond, pendant l'ouverture
+    // elle-même, ou si la fenêtre est déjà au premier plan.
     private void OuvrirDepuisRaccourci(nint fenetreOrigine, OrigineOuverture origine)
     {
-        if (ArretEnCours || _fenetre is null || _fenetre.EstVisible || !_antiRebond.Accepter())
+        if (ArretEnCours || _fenetre is null)
         {
             return;
         }
 
-        _fenetre.AfficherPour(fenetreOrigine, origine);
+        if (_fenetre.EstVisible)
+        {
+            if (_fenetre.OuvertureEnCours || _fenetre.EstAuPremierPlan || !_antiRebond.Accepter())
+            {
+                return;
+            }
+
+            _journal.Info($"{origine} : la fenêtre était affichée derrière, elle est ramenée au premier plan.");
+            _fenetre.RamenerAuPremierPlan();
+            return;
+        }
+
+        if (_antiRebond.Accepter())
+        {
+            _fenetre.AfficherPour(fenetreOrigine, origine);
+        }
     }
 
     private void ReinstallerCrochet(string raison)
@@ -177,15 +196,20 @@ public sealed partial class App
 
     // Le thème, le mode de collage et la chasse fixe sont appliqués par la fenêtre et la vue, le raccourci par
     // EnregistrerRaccourci, le démarrage avec Windows par la vue elle-même. Restent le plafond et le texte d'état du hook,
-    // qui cite le raccourci de secours.
+    // qui cite le raccourci de secours. Le plafond n'est appliqué que s'il a changé : les Paramètres ont demandé la
+    // confirmation avant de l'enregistrer, et un autre réglage n'a aucune raison de supprimer quoi que ce soit.
     private void SurParametresModifies(DepotHistorique depot)
     {
-        AppliquerPlafond(depot);
+        if (_vue?.Reglages.PlafondTemporaire != _plafondApplique)
+        {
+            AppliquerPlafond(depot);
+        }
+
         _etatAffiche = null;
         ActualiserEtatCrochet();
     }
 
-    // Un plafond abaissé dans les Paramètres s'applique tout de suite, sans attendre la prochaine copie.
+    // Applique le plafond des réglages, déjà confirmé par l'utilisateur (ou enregistré lors d'une session précédente).
     private void AppliquerPlafond(DepotHistorique depot)
     {
         if (_vue is null)
@@ -193,6 +217,7 @@ public sealed partial class App
             return;
         }
 
+        _plafondApplique = _vue.Reglages.PlafondTemporaire;
         try
         {
             var supprimes = depot.AppliquerPlafond(_vue.Reglages.PlafondTemporaire);
@@ -208,6 +233,7 @@ public sealed partial class App
     }
 
     // Aligne la clé Run sur les réglages, avec le chemin de l'exécutable en cours (il change après une publication).
+    // GestionDemarrage ne l'écrit jamais en version Debug, et en Release seulement si le chemin a changé.
     // Un refus du registre est noté sans empêcher le démarrage.
     private void AppliquerDemarrageWindows()
     {
@@ -221,8 +247,7 @@ public sealed partial class App
 
         try
         {
-            DemarrageWindows.Appliquer(activer, chemin);
-            _journal.Info($"Démarrage avec Windows : {(activer ? "activé" : "désactivé")}.");
+            GestionDemarrage.Synchroniser(activer, chemin, _journal);
         }
         catch (Exception exception)
         {

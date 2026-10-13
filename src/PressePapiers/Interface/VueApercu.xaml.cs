@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Microsoft.UI.Xaml;
@@ -18,6 +19,9 @@ public sealed partial class VueApercu : UserControl
 {
     // Un TextBlock ne digère pas des mégaoctets : au-delà, l'aperçu est tronqué (le collage reste complet).
     private const int CaracteresAffiches = 100_000;
+
+    // Largeur de décodage des grandes images : assez pour une zone d'aperçu large, sans décoder une capture 4K entière.
+    private const int LargeurMaxDecodee = 1000;
 
     private FenetrePrincipaleVue? _vue;
     private (long Id, string? Nom, long OngletId)? _affiche;
@@ -49,6 +53,9 @@ public sealed partial class VueApercu : UserControl
         Afficher(vue.ElementSelectionne);
     }
 
+    /// <summary>Levé après l'enregistrement d'un nom et d'un onglet : la fenêtre redonne alors le focus à la recherche.</summary>
+    public event Action? ElementEnregistre;
+
     /// <summary>Vrai si ce nœud de l'arbre visuel est le champ Nom : ses touches (Entrée, flèches) lui appartiennent.</summary>
     internal bool ContientChampNom(DependencyObject noeud) => ReferenceEquals(noeud, ChampNom);
 
@@ -59,25 +66,20 @@ public sealed partial class VueApercu : UserControl
         ChampNom.SelectAll();
     }
 
+    // L'élément complet n'est lu qu'ici, à la sélection : la liste ne garde que des résumés.
     private void Afficher(ElementVue? ligne)
     {
-        var element = ligne?.Element;
-
         // Une relecture du dépôt recrée les lignes : si c'est le même élément, rien ne change, et un nom en cours
         // de saisie n'est pas effacé.
-        (long, string?, long)? cle = element is null ? null : (element.Id, element.Nom, element.OngletId);
+        (long, string?, long)? cle = ligne is null ? null : (ligne.Id, ligne.Nom, ligne.OngletId);
         if (cle is not null && cle == _affiche)
         {
             return;
         }
 
-        _affiche = cle;
-        ApercuTexte.Visibility = Visibility.Collapsed;
-        DefilementTexte.Visibility = Visibility.Collapsed;
-        ApercuRiche.Visibility = Visibility.Collapsed;
-        ZoneImage.Visibility = Visibility.Collapsed;
-        DefilementFichiers.Visibility = Visibility.Collapsed;
-        Mention.Text = string.Empty;
+        var element = ligne is null ? null : _vue?.LireElement(ligne.Id);
+        _affiche = element is null ? null : cle;
+        Vider();
 
         var present = element is not null;
         Vide.Visibility = present ? Visibility.Collapsed : Visibility.Visible;
@@ -101,7 +103,7 @@ public sealed partial class VueApercu : UserControl
         switch (element.Type)
         {
             case TypeElement.Image:
-                _ = AfficherImageAsync(element);
+                ExecutionProtegee.Lancer(_vue!.Journal, () => AfficherImageAsync(element), "l'affichage de l'image");
                 break;
             case TypeElement.Fichiers:
                 ListeFichiers.ItemsSource = element.Fichiers;
@@ -118,6 +120,26 @@ public sealed partial class VueApercu : UserControl
                 AfficherTexte(element, ligne, null);
                 break;
         }
+    }
+
+    // Masque tous les blocs et libère leur contenu : fenêtre masquée ou aucun élément choisi, le texte, l'image et le RTF
+    // d'un gros élément ne restent pas en mémoire.
+    private void Vider()
+    {
+        if (ApercuRiche.Visibility == Visibility.Visible)
+        {
+            RenduRtf.Vider(ApercuRiche);
+        }
+
+        ApercuTexte.Visibility = Visibility.Collapsed;
+        DefilementTexte.Visibility = Visibility.Collapsed;
+        ApercuRiche.Visibility = Visibility.Collapsed;
+        ZoneImage.Visibility = Visibility.Collapsed;
+        DefilementFichiers.Visibility = Visibility.Collapsed;
+        Mention.Text = string.Empty;
+        ApercuTexte.Text = string.Empty;
+        ApercuImage.Source = null;
+        ListeFichiers.ItemsSource = null;
     }
 
     private void AfficherTexte(Element element, ElementVue ligne, string? mention)
@@ -138,6 +160,8 @@ public sealed partial class VueApercu : UserControl
     }
 
     // L'image est lue en mémoire : un BitmapImage sur le fichier le garderait ouvert et empêcherait de le supprimer.
+    // Elle n'est décodée à une largeur réduite que si elle dépasse la zone d'aperçu ; une petite image garde sa taille réelle
+    // (et le contrôle est borné à sa taille réelle : Uniform réduit une grande image mais agrandirait une petite).
     private async Task AfficherImageAsync(Element element)
     {
         var cle = _affiche;
@@ -150,22 +174,49 @@ public sealed partial class VueApercu : UserControl
             using var flux = new InMemoryRandomAccessStream();
             await flux.WriteAsync(octets.AsBuffer());
             flux.Seek(0);
-            var image = new BitmapImage { DecodePixelWidth = 1000 };
+            var image = new BitmapImage();
+            if (LargeurPng(octets) > LargeurMaxDecodee)
+            {
+                image.DecodePixelWidth = LargeurMaxDecodee;
+            }
+
             await image.SetSourceAsync(flux);
             if (cle == _affiche)
             {
+                ApercuImage.MaxWidth = image.PixelWidth;
+                ApercuImage.MaxHeight = image.PixelHeight;
                 ApercuImage.Source = image;
             }
         }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException
-                                                       or System.Runtime.InteropServices.COMException)
+        catch (Exception exception)
         {
+            // Un fichier absent ou un PNG refusé sont attendus ; toute autre exception est notée au journal.
+            if (exception is not (IOException or UnauthorizedAccessException or InvalidOperationException
+                                  or System.Runtime.InteropServices.COMException))
+            {
+                _vue?.Journal.Erreur("Aperçu de l'image impossible.", exception);
+            }
+
             if (cle == _affiche)
             {
                 ImageAbsente.Text = "L'image est introuvable ou illisible sur le disque.";
                 ImageAbsente.Visibility = Visibility.Visible;
             }
         }
+    }
+
+    // Largeur lue dans l'en-tête IHDR du PNG (signature de 8 octets, longueur et type de bloc, puis la largeur sur 4 octets
+    // grand-boutiste) ; zéro si l'en-tête n'est pas celui d'un PNG.
+    private static int LargeurPng(byte[] octets)
+    {
+        ReadOnlySpan<byte> signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        if (octets.Length < 24 || !octets.AsSpan(0, 8).SequenceEqual(signature))
+        {
+            return 0;
+        }
+
+        var largeur = BinaryPrimitives.ReadUInt32BigEndian(octets.AsSpan(16, 4));
+        return largeur > int.MaxValue ? int.MaxValue : (int)largeur;
     }
 
     // Nombre à la française, groupes de chiffres séparés par une espace insécable.
@@ -211,7 +262,13 @@ public sealed partial class VueApercu : UserControl
 
     private void Nommer_Click(object sender, RoutedEventArgs e) => FocaliserNom();
 
-    private void Supprimer_Click(object sender, RoutedEventArgs e) => _ = _vue?.SupprimerSelectionAsync();
+    private void Supprimer_Click(object sender, RoutedEventArgs e)
+    {
+        if (_vue is { } vue)
+        {
+            ExecutionProtegee.Lancer(vue.Journal, vue.SupprimerSelectionAsync, "la suppression de l'élément");
+        }
+    }
 
     private void Enregistrer_Click(object sender, RoutedEventArgs e) => Enregistrer();
 
@@ -224,5 +281,12 @@ public sealed partial class VueApercu : UserControl
         }
     }
 
-    private void Enregistrer() => _vue?.Enregistrer(ChampNom.Text, (ChoixOnglet.SelectedItem as OngletVue)?.Id);
+    // Après un enregistrement réussi, le focus revient à la recherche (par la fenêtre) pour enchaîner au clavier.
+    private void Enregistrer()
+    {
+        if (_vue?.Enregistrer(ChampNom.Text, (ChoixOnglet.SelectedItem as OngletVue)?.Id) == true)
+        {
+            ElementEnregistre?.Invoke();
+        }
+    }
 }

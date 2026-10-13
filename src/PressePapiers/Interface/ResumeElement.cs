@@ -20,7 +20,7 @@ internal static class ResumeElement
 
     /// <summary>
     /// Deux premières lignes non vides du texte, débarrassées de leur indentation ; une ellipse signale la suite.
-    /// Un texte de plusieurs mégaoctets n'est lu que sur ses premiers caractères.
+    /// Seuls les <see cref="ElementResume.LongueurMaxExtrait"/> premiers caractères sont lus : c'est tout ce que contient un résumé.
     /// </summary>
     public static string ApercuTexte(string? texte)
     {
@@ -29,29 +29,37 @@ internal static class ResumeElement
             return string.Empty;
         }
 
-        const int caracteresLus = 2000;
+        const int caracteresLus = ElementResume.LongueurMaxExtrait;
         var debut = texte.Length > caracteresLus ? texte[..caracteresLus] : texte;
         var lignes = debut.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var resume = lignes.Length == 1 ? lignes[0] : lignes[0] + "\n" + lignes[1];
-        var suite = lignes.Length > 2 || texte.Length > caracteresLus;
+        var suite = lignes.Length > 2 || texte.Length >= caracteresLus;
         return suite ? resume + " …" : resume;
     }
 
-    /// <summary>Texte d'aperçu d'un élément selon son type.</summary>
-    public static string Apercu(Element element)
+    /// <summary>Texte d'aperçu d'un élément selon son type, tiré de son résumé (le contenu complet n'est pas lu).</summary>
+    public static string Apercu(ElementResume resume)
     {
-        switch (element.Type)
+        switch (resume.Type)
         {
             case TypeElement.Image:
-                return "Image, " + Taille(element.Taille);
+                return "Image, " + Taille(resume.Taille);
             case TypeElement.Fichiers:
-                var chemins = element.Fichiers;
+                var chemins = (resume.Extrait ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+                // L'extrait est coupé à sa longueur maximale : son dernier chemin peut être incomplet.
+                if ((resume.Extrait?.Length ?? 0) >= ElementResume.LongueurMaxExtrait && chemins.Count > 1)
+                {
+                    chemins.RemoveAt(chemins.Count - 1);
+                }
+
+                var total = Math.Max(resume.NombreFichiers, chemins.Count);
                 var noms = chemins.Take(3).Select(c => Path.GetFileName(c.TrimEnd('\\', '/')) is { Length: > 0 } nom ? nom : c);
-                var reste = chemins.Count > 3 ? ", …" : string.Empty;
-                var pluriel = chemins.Count > 1 ? "fichiers" : "fichier";
-                return $"{chemins.Count} {pluriel} : {string.Join(", ", noms)}{reste}";
+                var reste = total > 3 ? ", …" : string.Empty;
+                var pluriel = total > 1 ? "fichiers" : "fichier";
+                return $"{total} {pluriel} : {string.Join(", ", noms)}{reste}";
             default:
-                var apercu = ApercuTexte(element.Texte);
+                var apercu = ApercuTexte(resume.Extrait);
                 return apercu.Length > 0 ? apercu : "(contenu vide)";
         }
     }

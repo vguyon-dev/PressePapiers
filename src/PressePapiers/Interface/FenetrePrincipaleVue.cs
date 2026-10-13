@@ -18,6 +18,9 @@ public sealed partial class FenetrePrincipaleVue : ObservableObject
     /// <summary>Délai de frappe avant de lancer la recherche (spec, section 8).</summary>
     internal static readonly TimeSpan DelaiRecherche = TimeSpan.FromMilliseconds(150);
 
+    /// <summary>Durée d'affichage d'un message de réussite avant sa fermeture automatique.</summary>
+    internal static readonly TimeSpan DelaiAnnonceReussie = TimeSpan.FromSeconds(5);
+
     private readonly DepotHistorique _depot;
     private readonly MoteurRecherche _recherche;
     private readonly ServiceRecollage _recollage;
@@ -25,6 +28,7 @@ public sealed partial class FenetrePrincipaleVue : ObservableObject
     private readonly IJournal _journal;
     private readonly DispatcherQueue _file;
     private readonly DispatcherQueueTimer _minuteurRecherche;
+    private readonly DispatcherQueueTimer _minuteurAnnonce;
 
     private HashSet<string> _chasseFixe = [];
     private bool _rafraichissementPlanifie;
@@ -55,13 +59,27 @@ public sealed partial class FenetrePrincipaleVue : ObservableObject
         _minuteurRecherche = _file.CreateTimer();
         _minuteurRecherche.Interval = DelaiRecherche;
         _minuteurRecherche.IsRepeating = false;
-        _minuteurRecherche.Tick += (_, _) => Rafraichir(premierElement: true);
+        ExecutionProtegee.Brancher(_minuteurRecherche, _journal, () => Rafraichir(premierElement: true), "la recherche");
+
+        _minuteurAnnonce = _file.CreateTimer();
+        _minuteurAnnonce.Interval = DelaiAnnonceReussie;
+        _minuteurAnnonce.IsRepeating = false;
+        ExecutionProtegee.Brancher(_minuteurAnnonce, _journal, () => AnnonceOuverte = false, "la fermeture du message");
 
         Reglages = parametres.Charger();
         _chasseFixe = ResumeElement.EnsembleChasseFixe(Reglages.ApplicationsChasseFixe);
+        AppliquerDemarrage = activer => GestionDemarrage.Modifier(activer, _journal);
 
+        // Seuls les onglets sont lus ici : la liste des éléments n'est lue qu'à l'ouverture de la fenêtre.
         _depot.Modifie += OnDepotModifie;
-        Rafraichir(premierElement: true);
+        try
+        {
+            LireOnglets();
+        }
+        catch (Exception exception)
+        {
+            _journal.Erreur("Impossible de lire les onglets au démarrage.", exception);
+        }
     }
 
     /// <summary>Horloge de l'affichage des heures ; remplaçable pour l'essai.</summary>
@@ -133,21 +151,45 @@ public sealed partial class FenetrePrincipaleVue : ObservableObject
         : "Aucun élément dans cet onglet.";
 
     /// <summary>
-    /// Vrai tant que la fenêtre est affichée. Masquée, elle ne relit rien : une écriture du dépôt est notée et la liste
-    /// n'est reconstruite qu'au passage à vrai (une copie par seconde ne doit pas coûter une lecture de la base).
+    /// Vrai tant que la fenêtre est affichée. Masquée, elle ne relit rien et ne garde aucune ligne : une écriture du dépôt
+    /// est seulement notée (une copie par seconde ne doit pas coûter une lecture de la base). La liste est lue par
+    /// <see cref="PreparerOuverture"/> à chaque ouverture ; si l'affichage a lieu sans elle, la relecture en attente est planifiée.
     /// </summary>
     public bool Affichee
     {
         get => _affichee;
         set
         {
-            _affichee = value;
-            if (value && _rafraichissementEnAttente)
+            if (_affichee == value)
             {
-                Rafraichir();
+                return;
+            }
+
+            _affichee = value;
+            if (value)
+            {
+                if (_rafraichissementEnAttente)
+                {
+                    PlanifierRafraichissement();
+                }
+
+                return;
+            }
+
+            // Les réglages en cours de saisie sont enregistrés avant que la liste soit vidée.
+            try
+            {
+                FenetreMasquee?.Invoke();
+            }
+            finally
+            {
+                LibererListe();
             }
         }
     }
+
+    /// <summary>Levé quand la fenêtre passe de affichée à masquée : la page Paramètres y enregistre ce qui est en cours de saisie.</summary>
+    public event Action? FenetreMasquee;
 
     /// <summary>Événement levé après chaque rafraîchissement, pour que la fenêtre aligne le volet de navigation.</summary>
     public event Action? Rafraichi;

@@ -7,6 +7,8 @@ namespace PressePapiers.Interface;
 /// <summary>Collage de l'élément choisi dans la fenêtre d'origine, et navigation au clavier dans les onglets et la liste.</summary>
 public sealed partial class FenetrePrincipaleVue
 {
+    private const string TitreNotification = "Presse-papiers";
+
     /// <summary>Fenêtre qui avait le focus quand la fenêtre a été ouverte ; zéro quand elle est inconnue (ouverture depuis l'icône).</summary>
     public nint FenetreOrigine { get; set; }
 
@@ -16,7 +18,7 @@ public sealed partial class FenetrePrincipaleVue
     /// <summary>Masque la fenêtre ; appelée par le recollage au bon moment de sa séquence.</summary>
     public Action MasquerFenetre { get; set; } = () => { };
 
-    /// <summary>Notification de l'icône (titre, message), pour un collage impossible dont la fenêtre est déjà masquée. Branchée par l'application.</summary>
+    /// <summary>Notification de l'icône (titre, message), pour un collage dont la fenêtre est déjà masquée. Branchée par l'application.</summary>
     public Action<string, string>? Notifier { get; set; }
 
     /// <summary>
@@ -26,8 +28,9 @@ public sealed partial class FenetrePrincipaleVue
     public bool CollageEnCours { get; private set; }
 
     /// <summary>
-    /// Colle l'élément choisi dans la fenêtre d'origine (ou le copie seulement), puis dit à l'utilisateur ce qui s'est passé
-    /// quand la fenêtre reste affichée. À appeler sur le fil d'interface : le recollage y reprend après chaque attente.
+    /// Colle l'élément choisi dans la fenêtre d'origine (ou le copie seulement), puis dit à l'utilisateur ce qui s'est passé :
+    /// dans la fenêtre si elle reste affichée, par la notification de l'icône si elle est déjà masquée. À appeler sur le fil
+    /// d'interface : le recollage y reprend après chaque attente. L'élément complet n'est lu qu'ici, pas dans la liste.
     /// </summary>
     public async Task CollerAsync(ModeCollage mode, bool copieSeule)
     {
@@ -37,15 +40,27 @@ public sealed partial class FenetrePrincipaleVue
         }
 
         CollageEnCours = true;
+        var masquee = false;
         try
         {
-            var issue = await _recollage.CollerAsync(ligne.Element, mode, FenetreOrigine, copieSeule, HandleOutil, MasquerFenetre);
-            Informer(issue);
+            var element = LireElement(ligne.Id);
+            if (element is null)
+            {
+                Annoncer(InfoBarSeverity.Warning, "Cet élément n'existe plus.");
+                return;
+            }
+
+            var issue = await _recollage.CollerAsync(element, mode, FenetreOrigine, copieSeule, HandleOutil, () =>
+            {
+                masquee = true;
+                MasquerFenetre();
+            });
+            Informer(issue, masquee || !Affichee);
         }
         catch (Exception exception)
         {
             _journal.Erreur("Le collage a échoué.", exception);
-            Annoncer(InfoBarSeverity.Error, "Le collage a échoué. Le détail est dans le journal.");
+            Informer(IssueCollage.Echec, masquee || !Affichee);
         }
         finally
         {
@@ -53,28 +68,49 @@ public sealed partial class FenetrePrincipaleVue
         }
     }
 
-    /// <summary>Message qui accompagne l'issue d'un collage : rien après un collage réussi, la fenêtre s'est masquée.</summary>
-    internal void Informer(IssueCollage issue)
+    /// <summary>
+    /// Message qui accompagne l'issue d'un collage : rien après un collage réussi. Fenêtre masquée, seule la notification
+    /// de l'icône peut encore parler : aucune issue autre que <see cref="IssueCollage.Colle"/> ne reste muette.
+    /// </summary>
+    /// <param name="issue">Issue rendue par le recollage.</param>
+    /// <param name="fenetreMasquee">Vrai si la fenêtre n'est plus affichée.</param>
+    internal void Informer(IssueCollage issue, bool fenetreMasquee)
     {
-        switch (issue)
+        if (issue == IssueCollage.Colle)
         {
-            case IssueCollage.CopieDemandee:
-                Annoncer(InfoBarSeverity.Success, "Copié dans le presse-papiers.");
-                break;
-            case IssueCollage.CopieSansFenetreOrigine:
-                Annoncer(InfoBarSeverity.Informational,
-                         "Copié. La fenêtre d'origine est inconnue (ouverture depuis l'icône) : colle avec Ctrl+V.");
-                break;
-            case IssueCollage.CopieFenetreFermee:
-                Annoncer(InfoBarSeverity.Warning, "Copié. La fenêtre d'origine n'existe plus : colle avec Ctrl+V.");
-                break;
-            case IssueCollage.CopieFenetreElevee:
-                // La fenêtre est déjà masquée : seule la notification de l'icône peut encore le dire.
-                Notifier?.Invoke("Presse-papiers", "Copié, colle avec Ctrl+V");
-                break;
-            case IssueCollage.Echec:
-                Annoncer(InfoBarSeverity.Error, "Le collage a échoué. Le détail est dans le journal.");
-                break;
+            return;
+        }
+
+        const string bulleCopie = "Copié, colle avec Ctrl+V";
+        const string bulleImpossible = "Collage impossible, l'élément est copié : colle avec Ctrl+V";
+        var (gravite, message, bulle) = issue switch
+        {
+            IssueCollage.CopieDemandee => (InfoBarSeverity.Success, "Copié dans le presse-papiers.", "Copié dans le presse-papiers"),
+            IssueCollage.CopieSansFenetreOrigine => (InfoBarSeverity.Informational,
+                "Copié. La fenêtre d'origine est inconnue (ouverture depuis l'icône) : colle avec Ctrl+V.", bulleCopie),
+            IssueCollage.CopieFenetreFermee => (InfoBarSeverity.Warning,
+                "Copié. La fenêtre d'origine n'existe plus : colle avec Ctrl+V.", bulleCopie),
+            IssueCollage.CopieFenetreElevee => (InfoBarSeverity.Informational,
+                "Copié. La fenêtre d'origine est lancée en administrateur : colle avec Ctrl+V.", bulleCopie),
+            IssueCollage.Echec => (InfoBarSeverity.Error, "Le collage a échoué. Le détail est dans le journal.", bulleImpossible),
+
+            // Toute autre issue est une copie sans collage (touches de modification restées enfoncées, par exemple).
+            _ => (InfoBarSeverity.Warning, "Copié, mais le collage n'a pas été envoyé : colle avec Ctrl+V.", bulleImpossible),
+        };
+
+        if (!fenetreMasquee)
+        {
+            Annoncer(gravite, message);
+            return;
+        }
+
+        try
+        {
+            Notifier?.Invoke(TitreNotification, bulle);
+        }
+        catch (Exception exception)
+        {
+            _journal.Avertissement("La notification du collage n'a pas pu être affichée.", exception);
         }
     }
 
@@ -82,7 +118,17 @@ public sealed partial class FenetrePrincipaleVue
     internal void PreparerOuverture(OrigineOuverture origine, bool messageOrigine = true)
     {
         AnnonceOuverte = false;
-        ChoisirOnglet(Onglets.Count > 0 ? Onglets[0] : OngletSelectionne!);
+
+        // Une seule relecture : Temporaire est toujours le premier onglet, et ChoisirOnglet relit tout.
+        if (Onglets.Count > 0)
+        {
+            ChoisirOnglet(Onglets[0]);
+        }
+        else
+        {
+            ChangerRecherche(string.Empty);
+            Rafraichir(premierElement: true);
+        }
 
         if (messageOrigine && origine is OrigineOuverture.Icone or OrigineOuverture.Relance)
         {

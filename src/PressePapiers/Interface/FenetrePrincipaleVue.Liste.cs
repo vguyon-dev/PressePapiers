@@ -1,6 +1,8 @@
+using PressePapiers.Coeur.Modele;
+
 namespace PressePapiers.Interface;
 
-// Relecture du dépôt : onglets, éléments, recherche différée, regroupement des écritures venues d'un autre fil.
+// Relecture du dépôt : onglets, résumés des éléments, recherche différée, regroupement des écritures venues d'un autre fil.
 public sealed partial class FenetrePrincipaleVue
 {
     /// <summary>Choisit l'onglet à afficher : la recherche est effacée et le premier élément est choisi.</summary>
@@ -26,18 +28,41 @@ public sealed partial class FenetrePrincipaleVue
         _rafraichissementEnAttente = false;
         try
         {
-            var onglets = _depot.ListerOnglets().Select(o => OngletVue.De(o, _depot.CompterElements(o.Id))).ToList();
-            var courant = onglets.FirstOrDefault(o => o.Id == OngletSelectionne?.Id) ?? onglets[0];
-            Onglets = onglets;
-            OngletSelectionne = courant;
-            ReconstruireElements(onglets, courant, premierElement);
+            var onglets = LireOnglets();
+            ReconstruireElements(onglets, OngletSelectionne!, premierElement);
+            Rafraichi?.Invoke();
         }
         catch (Exception exception)
         {
             _journal.Erreur("Impossible de relire l'historique pour l'afficher.", exception);
         }
+    }
 
-        Rafraichi?.Invoke();
+    // Onglets et compteurs ; l'onglet choisi reste le même s'il existe encore, sinon c'est Temporaire.
+    private List<OngletVue> LireOnglets()
+    {
+        var onglets = _depot.ListerOnglets().Select(o => OngletVue.De(o, _depot.CompterElements(o.Id))).ToList();
+        var courant = onglets.FirstOrDefault(o => o.Id == OngletSelectionne?.Id) ?? onglets[0];
+        Onglets = onglets;
+        OngletSelectionne = courant;
+        return onglets;
+    }
+
+    // Fenêtre masquée : plus aucune ligne en mémoire, ni élément choisi (l'aperçu se vide avec lui).
+    private void LibererListe()
+    {
+        _minuteurRecherche.Stop();
+        _relecture = true;
+        try
+        {
+            Elements = [];
+        }
+        finally
+        {
+            _relecture = false;
+        }
+
+        SetProperty(ref _elementSelectionne, null, nameof(ElementSelectionne));
     }
 
     /// <summary>Mémorise la taille de la fenêtre (pixels logiques) dans les réglages, si elle a changé.</summary>
@@ -107,21 +132,22 @@ public sealed partial class FenetrePrincipaleVue
             }
         }
 
-        IReadOnlyList<PressePapiers.Coeur.Modele.Element> source;
+        // Des résumés seulement : le contenu complet d'un élément n'est lu qu'à sa sélection (aperçu) et à son collage.
+        IReadOnlyList<ElementResume> source;
         Dictionary<long, string>? noms = null;
         if (EnRecherche)
         {
-            source = _recherche.Chercher(Recherche);
+            source = _recherche.ChercherResumes(Recherche);
             noms = onglets.ToDictionary(o => o.Id, o => o.Nom);
         }
         else
         {
-            source = _depot.ListerElements(courant.Id);
+            source = _depot.ListerResumes(courant.Id);
         }
 
         var lignes = source
-            .Select(e => new ElementVue(e, noms?.GetValueOrDefault(e.OngletId),
-                                        ResumeElement.EstChasseFixe(e.Application, _chasseFixe), Horloge))
+            .Select(r => new ElementVue(r, noms?.GetValueOrDefault(r.OngletId),
+                                        ResumeElement.EstChasseFixe(r.Application, _chasseFixe), Horloge, _journal))
             .ToList();
 
         _relecture = true;
@@ -154,33 +180,38 @@ public sealed partial class FenetrePrincipaleVue
         // Peut arriver de n'importe quel fil (la capture écrit hors du fil d'interface).
         if (_file.HasThreadAccess)
         {
-            PlanifierRafraichissement();
+            ExecutionProtegee.Executer(_journal, PlanifierRafraichissement, "la planification de la relecture");
         }
         else
         {
-            _file.TryEnqueue(PlanifierRafraichissement);
+            ExecutionProtegee.Poster(_file, _journal, PlanifierRafraichissement, "la planification de la relecture");
         }
     }
 
     private void PlanifierRafraichissement()
     {
-        if (!Affichee)
-        {
-            _rafraichissementEnAttente = true;
-            return;
-        }
-
-        if (_rafraichissementPlanifie)
+        // Masquée, la fenêtre ne relit rien : la relecture de l'ouverture suivante rattrape tout.
+        _rafraichissementEnAttente = true;
+        if (!Affichee || _rafraichissementPlanifie)
         {
             return;
         }
 
         // Plusieurs écritures de suite donnent une seule relecture.
         _rafraichissementPlanifie = true;
-        _file.TryEnqueue(() =>
+        var envoye = ExecutionProtegee.Poster(_file, _journal, () =>
         {
             _rafraichissementPlanifie = false;
-            Rafraichir();
-        });
+
+            // La fenêtre a pu être masquée entre-temps, ou relue par une ouverture : plus rien à faire alors.
+            if (Affichee && _rafraichissementEnAttente)
+            {
+                Rafraichir();
+            }
+        }, "la relecture de l'historique");
+        if (!envoye)
+        {
+            _rafraichissementPlanifie = false;
+        }
     }
 }
