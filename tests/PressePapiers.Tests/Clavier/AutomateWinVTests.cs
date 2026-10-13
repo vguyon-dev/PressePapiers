@@ -10,11 +10,11 @@ public sealed class AutomateWinVTests
     private const uint Autre = 0x41; // la lettre A
 
     // Raccourcis de lecture : une frappe réelle (non injectée) avec la touche Windows réellement enfoncée ou non.
-    private static ActionCrochet Appuyer(AutomateWinV a, uint touche, bool winReelle = true) =>
-        a.Traiter(touche, enfoncee: true, injectee: false, winReellementEnfoncee: winReelle);
+    private static ActionCrochet Appuyer(AutomateWinV a, uint touche, bool winReelle = true, uint temps = 0) =>
+        a.Traiter(touche, enfoncee: true, injectee: false, winReellementEnfoncee: winReelle, temps: temps);
 
-    private static ActionCrochet Relacher(AutomateWinV a, uint touche, bool winReelle = true) =>
-        a.Traiter(touche, enfoncee: false, injectee: false, winReellementEnfoncee: winReelle);
+    private static ActionCrochet Relacher(AutomateWinV a, uint touche, bool winReelle = true, uint temps = 0) =>
+        a.Traiter(touche, enfoncee: false, injectee: false, winReellementEnfoncee: winReelle, temps: temps);
 
     [Fact]
     public void Win_puis_V_avale_et_ouvre()
@@ -170,7 +170,7 @@ public sealed class AutomateWinVTests
         Appuyer(automate, Win);
 
         // La priorité de l'injection sur le reste : sans elle, ce V injecté serait avalé et ouvrirait la fenêtre.
-        var action = automate.Traiter(V, enfoncee: true, injectee: true, winReellementEnfoncee: true);
+        var action = automate.Traiter(V, enfoncee: true, injectee: true, winReellementEnfoncee: true, temps: 0);
 
         Assert.Equal(ActionCrochet.Laisser, action);
     }
@@ -180,7 +180,7 @@ public sealed class AutomateWinVTests
     {
         var automate = new AutomateWinV();
 
-        automate.Traiter(Win, enfoncee: true, injectee: true, winReellementEnfoncee: true);
+        automate.Traiter(Win, enfoncee: true, injectee: true, winReellementEnfoncee: true, temps: 0);
 
         // Win injectée n'a pas armé l'automate : un V réel qui suit n'est pas une demande, même si GetAsyncKeyState
         // dit que Win est enfoncée (c'est alors la frappe injectée elle-même qui l'enfonce).
@@ -195,7 +195,7 @@ public sealed class AutomateWinVTests
         Appuyer(automate, V);
 
         // Le hook reçoit aussi la touche 0xE8 qu'il vient d'injecter : elle ne doit rien déclencher.
-        var action = automate.Traiter(0xE8, enfoncee: true, injectee: true, winReellementEnfoncee: true);
+        var action = automate.Traiter(0xE8, enfoncee: true, injectee: true, winReellementEnfoncee: true, temps: 0);
 
         Assert.Equal(ActionCrochet.Laisser, action);
         Assert.Equal(ActionCrochet.MasquerPuisLaisser, Relacher(automate, Win));

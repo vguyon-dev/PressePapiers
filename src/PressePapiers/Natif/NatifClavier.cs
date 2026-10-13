@@ -34,6 +34,10 @@ internal static partial class NatifClavier
     /// <summary>Décalages des champs de KBDLLHOOKSTRUCT (vkCode, scanCode, flags, time).</summary>
     internal const int DecalageCodeTouche = 0;
     internal const int DecalageDrapeaux = 8;
+    internal const int DecalageHeure = 12;
+
+    /// <summary>Action de SystemParametersInfo qui lit le délai de répétition du clavier (0 à 3, soit (n + 1) x 250 ms).</summary>
+    internal const uint SPI_GETKEYBOARDDELAY = 0x0016;
 
     /// <summary>MSG avec son champ de fin : la structure fait 48 octets en x64.</summary>
     [StructLayout(LayoutKind.Sequential)]
@@ -98,6 +102,10 @@ internal static partial class NatifClavier
 
     [LibraryImport("user32.dll")]
     internal static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll", EntryPoint = "SystemParametersInfoW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SystemParametersInfo(uint action, uint param, out int valeur, uint winIni);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     internal static partial uint SendInput(uint nombre, Entree[] entrees, int tailleEntree);

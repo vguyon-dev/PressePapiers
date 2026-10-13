@@ -11,11 +11,11 @@ public sealed class AutomateWinVEtatsPerdusTests
     private const uint Win = AutomateWinV.VkWinGauche;
     private const uint V = AutomateWinV.VkV;
 
-    private static ActionCrochet Appuyer(AutomateWinV a, uint touche, bool winReelle = true) =>
-        a.Traiter(touche, enfoncee: true, injectee: false, winReellementEnfoncee: winReelle);
+    private static ActionCrochet Appuyer(AutomateWinV a, uint touche, bool winReelle = true, uint temps = 0) =>
+        a.Traiter(touche, enfoncee: true, injectee: false, winReellementEnfoncee: winReelle, temps: temps);
 
-    private static ActionCrochet Relacher(AutomateWinV a, uint touche, bool winReelle = true) =>
-        a.Traiter(touche, enfoncee: false, injectee: false, winReellementEnfoncee: winReelle);
+    private static ActionCrochet Relacher(AutomateWinV a, uint touche, bool winReelle = true, uint temps = 0) =>
+        a.Traiter(touche, enfoncee: false, injectee: false, winReellementEnfoncee: winReelle, temps: temps);
 
     [Fact]
     public void La_repetition_de_Win_ne_fait_pas_rouvrir_pendant_la_repetition_de_V()
@@ -77,7 +77,7 @@ public sealed class AutomateWinVEtatsPerdusTests
         Relacher(automate, Win, winReelle: false);
         // Le relâchement de V n'a jamais été vu. Plus tard, l'utilisateur tape un « v » ordinaire.
 
-        Assert.Equal(ActionCrochet.Laisser, Appuyer(automate, V, winReelle: false));
+        Assert.Equal(ActionCrochet.Laisser, Appuyer(automate, V, winReelle: false, temps: 2000));
         Assert.Equal(ActionCrochet.Laisser, Relacher(automate, V, winReelle: false));
     }
 
@@ -88,12 +88,12 @@ public sealed class AutomateWinVEtatsPerdusTests
         Appuyer(automate, Win);
         Appuyer(automate, V);
         Relacher(automate, Win, winReelle: false);
-        Appuyer(automate, V, winReelle: false);
-        Relacher(automate, V, winReelle: false);
+        Appuyer(automate, V, winReelle: false, temps: 2000);
+        Relacher(automate, V, winReelle: false, temps: 2050);
 
         Appuyer(automate, Win);
 
-        Assert.Equal(ActionCrochet.AvalerEtOuvrir, Appuyer(automate, V));
+        Assert.Equal(ActionCrochet.AvalerEtOuvrir, Appuyer(automate, V, temps: 2100));
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class AutomateWinVEtatsPerdusTests
         Appuyer(automate, Win);
         Appuyer(automate, V);
         Relacher(automate, Win, winReelle: false);
-        Appuyer(automate, V, winReelle: false);
+        Appuyer(automate, V, winReelle: false, temps: 2000);
 
         // Win seule ensuite : le menu Démarrer doit s'ouvrir normalement.
         Appuyer(automate, Win);

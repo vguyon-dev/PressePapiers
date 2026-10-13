@@ -27,7 +27,7 @@ public sealed class CrochetWinV : ICrochetWinV
     // par le hook courant et le nouveau hook posé pendant une réinstallation.
     private static readonly NatifClavier.ProcedureHook _rappel = Rappel;
     private static readonly nint _pointeurRappel = Marshal.GetFunctionPointerForDelegate(_rappel);
-    private static readonly AutomateWinV _automate = new();
+    private static readonly AutomateWinV _automate = new(LireDelaiRepetitionClavierMs());
 
     // Un seul crochet vivant à la fois : la procédure statique ne sait parler qu'à lui.
     private static CrochetWinV? _actuel;
@@ -307,12 +307,28 @@ public sealed class CrochetWinV : ICrochetWinV
     private static bool AutresModificateursEnfonces() =>
         EstEnfoncee(NatifClavier.VK_CONTROL) || EstEnfoncee(NatifClavier.VK_MENU) || EstEnfoncee(NatifClavier.VK_SHIFT);
 
-    // Seul Win+V sans autre modificateur est repris : Win+Ctrl+V (raccourci de Windows 11), Win+Maj+V ou Win+Alt+V sont
-    // rendus à Windows. Dire alors « Win pas enfoncée » à l'automate le fait laisser passer la frappe et se remettre à
-    // zéro. Seul l'enfoncement de V est filtré : son relâchement suit la décision prise à l'enfoncement.
-    private static bool WinSeuleEnfoncee(bool enfoncementDeV) =>
-        (EstEnfoncee(NatifClavier.VK_LWIN) || EstEnfoncee(NatifClavier.VK_RWIN))
-        && !(enfoncementDeV && AutresModificateursEnfonces());
+    private static bool WinReellementEnfoncee() =>
+        EstEnfoncee(NatifClavier.VK_LWIN) || EstEnfoncee(NatifClavier.VK_RWIN);
+
+    // Délai avant la première répétition d'une touche tenue, lu une seule fois : (n + 1) x 250 ms pour n de 0 à 3. Si
+    // Windows refuse de le dire, l'automate garde son défaut (500 ms).
+    private static uint LireDelaiRepetitionClavierMs()
+    {
+        try
+        {
+            if (NatifClavier.SystemParametersInfo(NatifClavier.SPI_GETKEYBOARDDELAY, 0, out var reglage, 0)
+                && reglage is >= 0 and <= 3)
+            {
+                return (uint)(reglage + 1) * 250;
+            }
+        }
+        catch
+        {
+            // Le délai n'est qu'un réglage fin de la détection des répétitions : le défaut convient.
+        }
+
+        return AutomateWinV.DelaiRepetitionParDefautMs;
+    }
 
     // Procédure unique du hook. Elle doit rendre la main très vite et ne jamais laisser filer une exception.
     private static nint Rappel(int code, nint wParam, nint lParam)
@@ -331,11 +347,17 @@ public sealed class CrochetWinV : ICrochetWinV
             if (!enfoncee && !relachee) return NatifClavier.CallNextHookEx(_crochetCourant, code, wParam, lParam);
 
             var injectee = (drapeaux & NatifClavier.LLKHF_INJECTED) != 0;
+            var heure = (uint)Marshal.ReadInt32(lParam, NatifClavier.DecalageHeure);
 
             // L'état réel des modificateurs n'est utile (et lu) que pour V : les autres touches ne l'interrogent pas.
-            var winReelle = touche == AutomateWinV.VkV && !injectee && WinSeuleEnfoncee(enfoncee);
+            // Win+Ctrl+V (raccourci de Windows 11), Win+Maj+V ou Win+Alt+V sont rendus à Windows : l'automate les laisse
+            // passer sans oublier que Win est tenue. Seul l'enfoncement de V est filtré ainsi : son relâchement suit la
+            // décision prise à l'enfoncement.
+            var verifierV = touche == AutomateWinV.VkV && !injectee;
+            var winReelle = verifierV && WinReellementEnfoncee();
+            var autres = verifierV && enfoncee && winReelle && AutresModificateursEnfonces();
 
-            switch (_automate.Traiter(touche, enfoncee, injectee, winReelle))
+            switch (_automate.Traiter(touche, enfoncee, injectee, winReelle, heure, autres))
             {
                 case ActionCrochet.Avaler:
                     return 1;
