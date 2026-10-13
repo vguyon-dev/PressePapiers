@@ -5,7 +5,8 @@ namespace PressePapiers.Natif;
 /// <summary>Appels Windows du démarrage : boîte de message avant toute fenêtre, attente non bloquante de la redirection.</summary>
 internal static partial class NatifDemarrage
 {
-    internal const uint MB_OK = 0x0, MB_YESNO = 0x4, MB_ICONERROR = 0x10, MB_ICONWARNING = 0x30, MB_DEFBUTTON2 = 0x100, MB_SETFOREGROUND = 0x10000;
+    internal const uint MB_OK = 0x0, MB_YESNO = 0x4, MB_ICONERROR = 0x10, MB_ICONWARNING = 0x30, MB_ICONINFORMATION = 0x40,
+                        MB_DEFBUTTON2 = 0x100, MB_SETFOREGROUND = 0x10000;
     internal const int IDYES = 6;
 
     /// <summary>Attente de CoWaitForMultipleObjects : sans drapeau particulier, les messages COM continuent d'être pompés.</summary>
