@@ -12,11 +12,29 @@ public static class NiveauIntegrite
     // Le niveau d'un processus ne change pas pendant sa vie : une seule lecture suffit.
     private static readonly Lazy<int> _niveauCourant = new(LireNiveauCourant);
 
+    /// <summary>RID du niveau « élevé » : un processus lancé en administrateur (0x3000).</summary>
+    public const int Eleve = 0x3000;
+
     /// <summary>RID du niveau d'intégrité du processus d'une fenêtre ; null si une étape de la lecture échoue.</summary>
     public static int? DeFenetre(nint hwnd)
     {
         if (hwnd == 0) return null;
         if (NatifIntegrite.GetWindowThreadProcessId(hwnd, out var idProcessus) == 0 || idProcessus == 0) return null;
+
+        return DuProcessus(idProcessus);
+    }
+
+    /// <summary>
+    /// Le processus courant est lancé en administrateur (jeton élevé). Le niveau d'intégrité 0x3000 ou plus équivaut à
+    /// <c>TokenIsElevated</c> pour un jeton d'utilisateur : la valeur est déjà lue pour le collage, sans appel de plus.
+    /// Une lecture qui échoue donne 0, donc « non élevé » : le cas sûr, qui laisse l'application gérer elle-même son démarrage.
+    /// </summary>
+    public static bool ProcessusCourantEstEleve() => DuProcessusCourant() >= Eleve;
+
+    /// <summary>RID du niveau d'intégrité d'un processus par son identifiant ; null si une étape de la lecture échoue.</summary>
+    public static int? DuProcessus(uint idProcessus)
+    {
+        if (idProcessus == 0) return null;
 
         var processus = NatifIntegrite.OpenProcess(NatifIntegrite.PROCESS_QUERY_LIMITED_INFORMATION, false, idProcessus);
         if (processus == 0) return null;

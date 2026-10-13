@@ -77,6 +77,10 @@ public sealed partial class PageParametres : UserControl
         {
             ChampRaccourci.Text = reglages.RaccourciSecours;
             InterrupteurDemarrage.IsOn = reglages.DemarrageAvecWindows;
+
+            // Mode administrateur : la tâche planifiée lance l'outil, l'interrupteur serait sans effet (voir GestionDemarrage).
+            InterrupteurDemarrage.Visibility = _vue.DemarrageParTachePlanifiee ? Visibility.Collapsed : Visibility.Visible;
+            BlocDemarrageTache.Visibility = _vue.DemarrageParTachePlanifiee ? Visibility.Visible : Visibility.Collapsed;
             ChoixMiseEnForme.SelectedIndex = (int)reglages.MiseEnFormeParDefaut;
             ChampPlafond.Value = reglages.PlafondTemporaire;
             ChoixTheme.SelectedIndex = (int)reglages.Theme;

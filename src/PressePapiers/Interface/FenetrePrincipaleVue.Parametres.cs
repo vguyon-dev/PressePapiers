@@ -3,6 +3,7 @@ using System.Diagnostics;
 using Microsoft.UI.Xaml.Controls;
 using PressePapiers.Coeur.Reglages;
 using PressePapiers.Coeur.Stockage;
+using PressePapiers.Systeme;
 
 namespace PressePapiers.Interface;
 
@@ -24,9 +25,30 @@ public sealed partial class FenetrePrincipaleVue
     /// </summary>
     public Action<bool> AppliquerDemarrage { get; set; }
 
-    /// <summary>Ouvre un dossier ou un fichier avec l'application associée de Windows. Remplaçable pour l'essai.</summary>
-    public Action<string> OuvrirChemin { get; set; } =
-        chemin => Process.Start(new ProcessStartInfo(chemin) { UseShellExecute = true })?.Dispose();
+    /// <summary>
+    /// Vrai quand l'application est lancée en administrateur par la tâche planifiée de <c>publier.ps1 -Administrateur</c> : la
+    /// tâche gère alors le démarrage avec Windows, la page Paramètres n'offre plus l'interrupteur et la clé Run n'est plus écrite.
+    /// </summary>
+    public bool DemarrageParTachePlanifiee { get; init; }
+
+    /// <summary>
+    /// Ouvre un dossier ou un fichier avec l'application associée de Windows. Remplaçable pour l'essai. Un processus élevé
+    /// confie l'ouverture à l'Explorateur : le programme associé n'hérite pas des droits administrateur de l'outil.
+    /// </summary>
+    public Action<string> OuvrirChemin { get; set; } = OuvrirParDefaut;
+
+    private static void OuvrirParDefaut(string chemin)
+    {
+        if (LancementAdministrateur.Actif)
+        {
+            var explorateur = new ProcessStartInfo("explorer.exe") { UseShellExecute = false };
+            explorateur.ArgumentList.Add(chemin);
+            Process.Start(explorateur)?.Dispose();
+            return;
+        }
+
+        Process.Start(new ProcessStartInfo(chemin) { UseShellExecute = true })?.Dispose();
+    }
 
     /// <summary>
     /// Enregistre de nouveaux réglages, tirés des réglages en vigueur par <paramref name="modifier"/>, puis prévient les abonnés.
@@ -124,6 +146,13 @@ public sealed partial class FenetrePrincipaleVue
     /// </summary>
     public bool ChangerDemarrage(bool activer)
     {
+        if (DemarrageParTachePlanifiee)
+        {
+            // L'interrupteur n'est pas affiché dans ce mode ; ce garde-fou empêche d'écrire une clé Run qui doublerait la tâche.
+            _journal.Avertissement("Démarrage avec Windows : modification ignorée, la tâche planifiée administrateur le gère.");
+            return false;
+        }
+
         var avant = Reglages.DemarrageAvecWindows;
         try
         {

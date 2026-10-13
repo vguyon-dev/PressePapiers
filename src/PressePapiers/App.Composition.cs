@@ -30,7 +30,11 @@ public sealed partial class App
         var parametres = new ServiceParametres(dossiers.Parametres, _journal);
         _relais = new RelaisWindows(_journal);
         var recollage = new ServiceRecollage(new EcrivainPressePapiers(_relais.Handle, _journal), depot, _journal);
-        _vue = new FenetrePrincipaleVue(depot, new MoteurRecherche(baseHistorique), recollage, parametres, _journal);
+        _vue = new FenetrePrincipaleVue(depot, new MoteurRecherche(baseHistorique), recollage, parametres, _journal)
+        {
+            // Avant la fenêtre : la page Paramètres lit ce drapeau en se construisant.
+            DemarrageParTachePlanifiee = LancementAdministrateur.Actif,
+        };
         _fenetre = new FenetrePrincipale(_vue);
 
         _vue.Notifier = (titre, message) => _icone?.Notifier(titre, message);
@@ -235,6 +239,8 @@ public sealed partial class App
     // Aligne la clé Run sur les réglages, avec le chemin de l'exécutable en cours (il change après une publication).
     // GestionDemarrage ne l'écrit jamais en version Debug, et en Release seulement si le chemin a changé.
     // Un refus du registre est noté sans empêcher le démarrage.
+    // Mode administrateur (élevé, depuis Program Files) : le lancement appartient à la tâche planifiée de publier.ps1, la clé Run
+    // n'est plus gérée et les Paramètres n'offrent plus l'interrupteur.
     private void AppliquerDemarrageWindows()
     {
         var activer = _vue?.Reglages.DemarrageAvecWindows ?? false;
@@ -247,6 +253,12 @@ public sealed partial class App
 
         try
         {
+            if (LancementAdministrateur.Actif)
+            {
+                GestionDemarrage.RetirerCleRunSiElleMePointe(chemin, _journal);
+                return;
+            }
+
             GestionDemarrage.Synchroniser(activer, chemin, _journal);
         }
         catch (Exception exception)

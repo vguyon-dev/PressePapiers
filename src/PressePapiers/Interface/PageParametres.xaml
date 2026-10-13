@@ -41,6 +41,13 @@
             <ToggleSwitch x:Name="InterrupteurDemarrage" Header="Démarrage avec Windows" OnContent="Activé" OffContent="Désactivé"
                           Toggled="Demarrage_Toggled" />
 
+            <!-- Mode administrateur : l'interrupteur est remplacé par ce texte (lancement par la tâche planifiée) -->
+            <StackPanel x:Name="BlocDemarrageTache" Spacing="6" Visibility="Collapsed">
+                <TextBlock Text="Démarrage avec Windows" Style="{StaticResource TitreReglage}" />
+                <TextBlock Style="{StaticResource DescriptionReglage}"
+                           Text="Lancé en administrateur par une tâche planifiée (géré par publier.ps1). Win+V et le collage automatique fonctionnent aussi dans les fenêtres administrateur. Pour revenir au mode normal : publier.ps1 -RetirerAdministrateur." />
+            </StackPanel>
+
             <!-- Mise en forme par défaut -->
             <StackPanel Spacing="6">
                 <ComboBox x:Name="ChoixMiseEnForme" Header="Mise en forme par défaut au collage" MinWidth="240"

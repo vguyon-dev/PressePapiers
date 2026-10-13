@@ -104,6 +104,14 @@ public sealed class RelaisWindows : IDisposable
             _journal.Avertissement($"TaskbarCreated non autorisé par le filtre de messages (code {Marshal.GetLastPInvokeError()}).");
         }
 
+        // Lancé en administrateur (tâche planifiée), le processus filtre les messages envoyés par l'Explorateur, de niveau
+        // inférieur (UIPI) : le rappel de l'icône doit être autorisé comme TaskbarCreated, sinon un clic sur l'icône
+        // pourrait rester sans effet. Sans objet, mais sans danger, pour un processus ordinaire.
+        if (!NatifRelais.AutoriserMessage(_hwnd, MessageIcone, NatifRelais.MsgfltAllow, 0))
+        {
+            _journal.Avertissement($"Le message de l'icône n'est pas autorisé par le filtre de messages (code {Marshal.GetLastPInvokeError()}).");
+        }
+
         InscrireSession();
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
@@ -32,6 +33,19 @@ public static class Program
         var principale = AppInstance.FindOrRegisterForKey(CleInstance);
         if (!principale.IsCurrent)
         {
+            // Mode administrateur : une instance élevée ne reçoit pas l'activation d'un processus de niveau inférieur, et la
+            // tenter ferait attendre jusqu'au délai. Autant dire à l'utilisateur ce qui tourne et comment l'ouvrir.
+            if (UneAutreInstanceEstPlusElevee())
+            {
+                Noter(journal => journal.Info(
+                    $"Seconde instance (processus {Environment.ProcessId}) : l'instance principale tourne en administrateur, arrêt."));
+                NatifDemarrage.AfficherMessage(0,
+                    "PressePapiers tourne déjà en administrateur (lancé à l'ouverture de session par une tâche planifiée). "
+                    + "Ouvre-le avec Win+V ou avec son icône dans la zone de notification.",
+                    "PressePapiers", NatifDemarrage.MB_OK | NatifDemarrage.MB_ICONINFORMATION | NatifDemarrage.MB_SETFOREGROUND);
+                return;
+            }
+
             if (RedirigerVers(principale))
             {
                 return;
@@ -63,6 +77,39 @@ public static class Program
             SynchronizationContext.SetSynchronizationContext(contexte);
             _ = new App();
         });
+    }
+
+    // Une autre copie de PressePapiers, de niveau d'intégrité supérieur au nôtre. Un niveau illisible compte comme supérieur : un
+    // processus du même utilisateur dont le jeton refuse d'être lu est presque toujours un processus élevé.
+    private static bool UneAutreInstanceEstPlusElevee()
+    {
+        try
+        {
+            var nous = NiveauIntegrite.DuProcessusCourant();
+            using var courant = Process.GetCurrentProcess();
+            foreach (var autre in Process.GetProcessesByName(courant.ProcessName))
+            {
+                using (autre)
+                {
+                    // Les copies d'une autre session (autre utilisateur connecté) ne sont pas celle dont on dépend.
+                    if (autre.Id == courant.Id || autre.SessionId != courant.SessionId)
+                    {
+                        continue;
+                    }
+
+                    if (NiveauIntegrite.DuProcessus((uint)autre.Id) is not int niveau || niveau > nous)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Pas de diagnostic possible : le chemin habituel (redirection) prend le relais.
+        }
+
+        return false;
     }
 
     // Transmet l'activation à l'instance principale ; renvoie vrai si elle l'a reçue. L'appel est lancé sur une tâche du

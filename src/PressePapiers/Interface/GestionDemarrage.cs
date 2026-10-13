@@ -43,6 +43,30 @@ internal static class GestionDemarrage
     }
 
     /// <summary>
+    /// Mode administrateur : le lancement est confié à une tâche planifiée, que le script d'installation crée et retire. L'application
+    /// ne gère plus la clé Run, mais en retire la valeur si elle pointe vers cet exécutable : elle ferait un second lancement,
+    /// non élevé, à chaque ouverture de session. Une valeur qui pointe ailleurs (autre installation) n'est pas touchée.
+    /// </summary>
+    /// <param name="chemin">Chemin de l'exécutable en cours.</param>
+    /// <param name="journal">Journal de l'application.</param>
+    public static void RetirerCleRunSiElleMePointe(string chemin, IJournal journal)
+    {
+#if DEBUG
+        journal.Info("Version Debug : la clé Run du démarrage avec Windows n'est pas modifiée.");
+#else
+        if (string.Equals(LireValeur(), ValeurAttendue(chemin), StringComparison.OrdinalIgnoreCase))
+        {
+            DemarrageWindows.Appliquer(false, chemin);
+            journal.Info("Mode administrateur : clé Run retirée, le lancement est confié à la tâche planifiée.");
+        }
+        else
+        {
+            journal.Info("Mode administrateur : le démarrage est géré par la tâche planifiée, la clé Run n'est pas utilisée.");
+        }
+#endif
+    }
+
+    /// <summary>
     /// Applique un choix explicite de l'utilisateur (interrupteur des Paramètres) : la clé est écrite ou retirée sans
     /// condition de chemin, sauf en version Debug où elle n'est jamais touchée.
     /// </summary>
