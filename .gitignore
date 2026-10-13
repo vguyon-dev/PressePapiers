@@ -1,0 +1,26 @@
+# Sorties de compilation .NET
+bin/
+obj/
+artifacts/
+publish/
+*.user
+*.suo
+
+# Visual Studio, Rider, VS Code
+.vs/
+.idea/
+.vscode/
+*.DotSettings.user
+
+# Résultats de tests
+TestResults/
+*.trx
+coverage*/
+
+# Paquets NuGet restaurés localement
+*.nupkg
+packages/
+
+# Windows
+Thumbs.db
+Desktop.ini

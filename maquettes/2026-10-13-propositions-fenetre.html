@@ -1,0 +1,1198 @@
+<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Presse-papiers : maquette</title>
+<style>
+[hidden] { display: none !important; }
+
+/* Jetons repris du thème Fluent de Windows 11 (ThemeMode de WPF sur .NET 9 et plus) :
+   la maquette doit ressembler à ce que WPF affichera, pas à un site web. */
+:root {
+  --bureau: #d9e3ee;
+  --fond-fen: #f3f3f3;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --survol: rgba(0, 0, 0, .04);
+  --select: rgba(0, 0, 0, .06);
+  --trait: #e3e3e3;
+  --texte: #1b1b1b;
+  --texte-2: #5b5b5b;
+  --accent: #005fb8;
+  --sur-accent: #ffffff;
+  --accent-doux: rgba(0, 95, 184, .10);
+  --ombre: 0 16px 40px rgba(0, 0, 0, .20), 0 0 0 1px rgba(0, 0, 0, .05);
+  --mica: rgba(238, 242, 247, .86);
+  --couche: rgba(255, 255, 255, .55);
+  --succes: #0f7b0f;
+  --succes-fond: #dff6dd;
+  --fond-bureau: radial-gradient(circle at 72% 62%, #5b97d9 0, transparent 42%), radial-gradient(circle at 35% 85%, #8dbbea 0, transparent 38%), #d9e3ee;
+  --police: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bureau: #18212c;
+  --fond-fen: #202020;
+  --surface: #2b2b2b;
+  --surface-2: #272727;
+  --survol: rgba(255, 255, 255, .05);
+  --select: rgba(255, 255, 255, .09);
+  --trait: #3b3b3b;
+  --texte: #ffffff;
+  --texte-2: #c9c9c9;
+  --accent: #60cdff;
+  --sur-accent: #000000;
+  --accent-doux: rgba(96, 205, 255, .14);
+  --ombre: 0 16px 40px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 255, 255, .06);
+  --mica: rgba(32, 34, 38, .88);
+  --couche: rgba(58, 58, 58, .30);
+  --succes: #6ccb5f;
+  --succes-fond: #393d1b;
+  --fond-bureau: radial-gradient(circle at 72% 62%, #1f4f86 0, transparent 42%), radial-gradient(circle at 35% 85%, #2b5d93 0, transparent 38%), #18212c;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.45 var(--police);
+  background: var(--surface-2);
+  color: var(--texte);
+}
+button, input, select { font: inherit; color: inherit; }
+kbd {
+  font: 12px var(--police);
+  padding: 0 5px;
+  border: 1px solid var(--trait);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- Commandes de la maquette (hors des écrans qu'elles changent) ---------- */
+.commandes {
+  padding: 16px;
+  border-bottom: 1px solid var(--trait);
+  background: var(--fond-fen);
+}
+.commandes h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+.commandes .sous-titre { margin: 0 0 12px; color: var(--texte-2); }
+.rangee { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin-bottom: 10px; }
+.groupe { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.groupe > span { color: var(--texte-2); margin-right: 2px; }
+.btn {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--trait);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.btn:hover { background: var(--survol); }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--sur-accent); border-color: var(--accent); }
+.btn-accent { background: var(--accent); color: var(--sur-accent); border-color: var(--accent); }
+.btn-accent:hover { filter: brightness(1.08); background: var(--accent); }
+.aide-clavier { margin: 4px 0 0; color: var(--texte-2); }
+
+/* ---------- Bureau simulé ---------- */
+.bureau {
+  position: relative;
+  height: 620px;
+  overflow: hidden;
+  background: var(--fond-bureau);
+}
+.appli {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  width: min(560px, calc(100% - 48px));
+  background: var(--surface);
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+}
+.appli-titre { padding: 8px 12px; border-bottom: 1px solid var(--trait); font-weight: 600; }
+.appli-champ { padding: 6px 12px; border-bottom: 1px solid var(--trait); color: var(--texte-2); overflow-wrap: anywhere; }
+.appli-champ b { color: var(--texte); font-weight: 400; margin-left: 6px; }
+.appli-corps { padding: 12px; min-height: 180px; overflow-wrap: anywhere; }
+.caret { display: inline-block; width: 1px; height: 1.1em; vertical-align: text-bottom; background: var(--texte); animation: clignote 1s steps(1) infinite; }
+@keyframes clignote { 50% { opacity: 0; } }
+.doc-img { display: inline-block; vertical-align: middle; margin: 2px 0; }
+.doc-colle { background: var(--accent-doux); border-radius: 2px; }
+
+/* ---------- Fenêtre du presse-papiers (commune) ---------- */
+.fen {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  background: var(--fond-fen);
+  border: 1px solid var(--trait);
+  border-radius: 8px;
+  box-shadow: var(--ombre);
+  z-index: 2;
+}
+.barre-titre { display: flex; align-items: center; gap: 8px; padding: 8px 8px 4px 14px; }
+.barre-titre strong { font-weight: 600; flex: 1; }
+.btn-icone {
+  display: inline-grid; place-items: center;
+  width: 32px; height: 32px;
+  border: 0; border-radius: 4px; background: transparent; cursor: pointer; color: var(--texte-2);
+}
+.btn-icone:hover { background: var(--survol); color: var(--texte); }
+.btn-icone svg { width: 16px; height: 16px; }
+
+.zone-recherche {
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 12px 8px;
+  padding: 0 10px;
+  min-height: 34px;
+  background: var(--surface);
+  border: 1px solid var(--trait);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 4px;
+}
+.zone-recherche svg { width: 16px; height: 16px; color: var(--texte-2); flex: none; }
+.champ-recherche { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; padding: 6px 0; }
+.champ-recherche::-webkit-search-cancel-button { cursor: pointer; }
+
+.bandeau-temp { margin: 0 14px 6px; color: var(--texte-2); font-size: 12px; }
+.bandeau-recherche { margin: 0 14px 6px; color: var(--accent); font-size: 12px; font-weight: 600; }
+
+.liste { list-style: none; margin: 0; padding: 0 6px 6px; overflow: auto; flex: 1; min-height: 0; }
+.el {
+  position: relative;
+  display: flex; gap: 10px; align-items: flex-start;
+  margin: 2px 0;
+  padding: 8px 8px 8px 12px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.el:hover { background: var(--surface-2); border-color: var(--trait); }
+.el.sel { background: var(--surface); border-color: var(--trait); box-shadow: inset 0 0 0 1px var(--accent-doux); }
+.el.sel::before {
+  content: ""; position: absolute; left: 3px; top: 50%; translate: 0 -50%;
+  width: 3px; height: 18px; border-radius: 2px; background: var(--accent);
+}
+.el-ico { flex: none; width: 20px; height: 20px; margin-top: 1px; color: var(--texte-2); }
+.el-ico svg { width: 20px; height: 20px; }
+.el-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.el-nom {
+  font-weight: 600;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.el-apercu {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.el-nom + .el-apercu { color: var(--texte-2); -webkit-line-clamp: 1; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.el-meta { color: var(--texte-2); font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.badge {
+  display: inline-block; padding: 0 6px; border-radius: 10px;
+  background: var(--accent-doux); color: var(--accent); font-weight: 600; font-size: 11.5px;
+}
+.badge-aa { font-style: italic; }
+.el-vignette { flex: none; line-height: 0; border-radius: 4px; overflow: hidden; border: 1px solid var(--trait); }
+.el-actions { display: flex; gap: 2px; opacity: 0; transition: opacity .15s; }
+.el:hover .el-actions, .el.sel .el-actions { opacity: 1; }
+.el-actions .btn-icone { width: 28px; height: 28px; }
+.vide { padding: 24px 12px; text-align: center; color: var(--texte-2); }
+
+.pied {
+  padding: 8px 14px;
+  border-top: 1px solid var(--trait);
+  color: var(--texte-2);
+  font-size: 12px;
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+}
+
+/* ---------- A : popup compacte au point de saisie ---------- */
+/* Près du point de saisie, mais décalée vers la gauche quand la place manque pour l'aperçu à côté (380 + 8 + 320 px). */
+.fen-a { left: clamp(16px, calc(100% - 724px), 300px); top: 130px; width: 380px; height: 470px; }
+.onglets { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: thin; }
+.onglet {
+  flex: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 2px 10px;
+  border: 1px solid var(--trait); border-radius: 15px;
+  background: var(--surface); cursor: pointer; white-space: nowrap;
+}
+.onglet:hover { background: var(--survol); }
+.onglet[aria-selected="true"] { background: var(--accent); color: var(--sur-accent); border-color: var(--accent); }
+.onglet .compte { font-size: 12px; opacity: .8; }
+.onglets.attenues .onglet { opacity: .55; }
+.onglet-plus { flex: none; border-radius: 15px; border: 1px dashed var(--trait); }
+
+.flyout {
+  position: absolute; left: calc(100% + 8px); top: 0;
+  width: 320px; height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--fond-fen);
+  border: 1px solid var(--trait); border-radius: 8px; box-shadow: var(--ombre);
+  overflow: hidden;
+}
+.flyout h3 { margin: 0; padding: 10px 14px 6px; font-size: 13px; font-weight: 600; color: var(--texte-2); }
+
+/* ---------- B : fenêtre avec onglets latéraux et aperçu ---------- */
+.fen-b { left: 50%; top: 36px; transform: translateX(-50%); width: min(900px, calc(100% - 32px)); height: 540px; }
+.b-corps { flex: 1; min-height: 0; display: grid; grid-template-columns: 190px minmax(0, 1fr) minmax(0, 1fr); }
+.rail { display: flex; flex-direction: column; gap: 2px; padding: 6px 6px 6px 10px; border-right: 1px solid var(--trait); overflow: auto; }
+.rail-item {
+  position: relative;
+  display: flex; align-items: center; gap: 8px;
+  min-height: 36px; padding: 4px 10px;
+  border: 0; border-radius: 4px; background: transparent; text-align: left; cursor: pointer;
+}
+.rail-item:hover { background: var(--survol); }
+.rail-item[aria-selected="true"] { background: var(--select); font-weight: 600; }
+.rail-item[aria-selected="true"]::before {
+  content: ""; position: absolute; left: 0; top: 50%; translate: 0 -50%;
+  width: 3px; height: 16px; border-radius: 2px; background: var(--accent);
+}
+.rail-item .nom { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-item .compte { color: var(--texte-2); font-size: 12px; font-weight: 400; }
+.rail-sep { height: 1px; background: var(--trait); margin: 6px 4px; }
+.rail-plus { justify-content: flex-start; color: var(--accent); }
+.b-liste { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--trait); }
+.apercu { display: flex; flex-direction: column; min-height: 0; background: var(--surface-2); }
+.ap-entete { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--trait); }
+.ap-entete label { display: grid; gap: 2px; font-size: 12px; color: var(--texte-2); }
+.ap-entete input, .ap-entete select, .dlg input, .dlg select {
+  min-height: 32px; padding: 4px 8px;
+  border: 1px solid var(--trait); border-bottom: 2px solid var(--texte-2); border-radius: 4px;
+  background: var(--surface); color: var(--texte);
+}
+.ap-entete input:focus, .dlg input:focus { border-bottom-color: var(--accent); outline: 0; }
+.ap-ligne { display: flex; gap: 8px; align-items: end; }
+.ap-ligne label { flex: 1; }
+.ap-contenu { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; overflow-wrap: anywhere; }
+.ap-contenu pre { margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 12.5px; }
+.ap-contenu .texte-plein { white-space: pre-wrap; margin: 0; }
+.ap-contenu .riche p { margin: 0 0 8px; }
+.ap-contenu ul.fichiers { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ap-contenu ul.fichiers li { display: flex; gap: 8px; align-items: flex-start; }
+.ap-contenu ul.fichiers svg { width: 16px; height: 16px; flex: none; margin-top: 2px; color: var(--texte-2); }
+.ap-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--trait); }
+.ap-meta { padding: 0 14px 10px; color: var(--texte-2); font-size: 12px; }
+.ap-vide { margin: auto; color: var(--texte-2); padding: 24px; text-align: center; }
+
+/* Barre de titre de B. WPF : barre système, distincte du contenu. WinUI 3 : fondue dans le fond Mica. */
+.barre-systeme {
+  display: flex; align-items: center; gap: 10px;
+  height: 32px; padding-left: 12px; font-size: 12px;
+  background: transparent; border-bottom: 1px solid var(--trait); border-radius: 8px 8px 0 0;
+}
+.barre-systeme .titre { flex: 1; display: flex; align-items: center; gap: 8px; }
+.app-ico { display: inline-grid; color: var(--accent); }
+.legende { display: flex; align-self: stretch; }
+.legende-btn { display: inline-grid; place-items: center; width: 46px; color: var(--texte); }
+.legende-btn svg { width: 10px; height: 10px; }
+.legende-btn:hover { background: var(--survol); }
+.legende-btn.fermer { cursor: pointer; border-top-right-radius: 8px; }
+.legende-btn.fermer:hover { background: #c42b1c; color: #ffffff; }
+
+/* Fond Mica dans les deux rendus de B : le thème Fluent de WPF l'applique aussi (ThemeMode). */
+.fen-b { background: var(--mica); backdrop-filter: blur(40px) saturate(1.3); }
+
+.fen-b[data-rendu="winui"] .barre-systeme { height: 48px; background: transparent; border-bottom: 0; padding-left: 16px; }
+.fen-b[data-rendu="winui"] .b-corps { grid-template-columns: 200px minmax(0, 1fr); }
+.fen-b[data-rendu="winui"] .rail { border-right: 0; padding: 0 4px 8px 6px; }
+.hamburger { margin: 0 0 4px 4px; }
+.rail-pied { margin-top: auto; padding-top: 6px; border-top: 1px solid var(--trait); }
+.couche {
+  display: flex; flex-direction: column; min-height: 0;
+  background: var(--couche);
+  border: 1px solid var(--trait); border-right: 0; border-bottom: 0; border-top-left-radius: 8px;
+}
+.couche-grille { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.fen-b[data-rendu="winui"] .b-liste { border-right: 1px solid var(--trait); }
+.fen-b[data-rendu="winui"] .apercu { background: transparent; }
+/* ListView de WinUI : éléments sans cadre, sélection par fond et pastille. */
+.fen-b[data-rendu="winui"] .el { background: transparent; }
+.fen-b[data-rendu="winui"] .el:hover { background: var(--survol); border-color: transparent; }
+.fen-b[data-rendu="winui"] .el.sel { background: var(--select); border-color: transparent; box-shadow: none; }
+.zone-recherche.asb { border-bottom-width: 1px; border-bottom-color: var(--texte-2); }
+.zone-recherche.asb:focus-within { border-bottom: 2px solid var(--accent); }
+.commandbar { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 8px; border-bottom: 1px solid var(--trait); }
+.appbar-btn {
+  display: grid; justify-items: center; gap: 2px;
+  min-width: 64px; padding: 6px 8px 4px;
+  border: 0; border-radius: 4px; background: transparent; cursor: pointer; font-size: 12px;
+}
+.appbar-btn:hover { background: var(--survol); }
+.infobar {
+  display: flex; align-items: center; gap: 10px;
+  margin: 8px 8px 0; padding: 6px 6px 6px 12px;
+  border-radius: 4px; border: 1px solid var(--trait); background: var(--succes-fond);
+}
+.infobar-ico { color: var(--succes); line-height: 0; }
+.infobar-txt { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* ContentDialog de WinUI 3 : boutons de largeur égale dans un pied grisé. */
+.dlg.winui form { padding: 24px 24px 0; }
+.dlg.winui menu { margin: 8px -24px 0; padding: 24px; background: var(--surface-2); border-top: 1px solid var(--trait); }
+.dlg.winui menu .btn { flex: 1; }
+
+/* ---------- C : barre de recherche façon lanceur ---------- */
+.fen-c { left: 50%; top: 28px; transform: translateX(-50%); width: min(660px, calc(100% - 32px)); max-height: 540px; }
+.fen-c .zone-recherche { margin: 12px; min-height: 46px; font-size: 17px; }
+.fen-c .zone-recherche svg { width: 20px; height: 20px; }
+.filtres { display: flex; gap: 4px; padding: 0 12px 8px; overflow-x: auto; }
+
+/* ---------- Toast et boîtes de dialogue ---------- */
+.toast {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 10px 16px; border-radius: 8px;
+  background: var(--surface); color: var(--texte); box-shadow: var(--ombre);
+  z-index: 5;
+}
+.dlg {
+  width: min(440px, calc(100% - 32px));
+  padding: 0; border: 1px solid var(--trait); border-radius: 8px;
+  background: var(--fond-fen); color: var(--texte); box-shadow: var(--ombre);
+}
+.dlg::backdrop { background: rgba(0, 0, 0, .3); }
+.dlg form { display: grid; gap: 12px; padding: 20px; }
+.dlg h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.dlg label { display: grid; gap: 4px; }
+.dlg .dlg-apercu { margin: 0; padding: 8px 10px; border-radius: 4px; background: var(--surface); color: var(--texte-2); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.dlg menu { display: flex; justify-content: flex-end; gap: 8px; margin: 4px 0 0; padding: 0; }
+
+/* ---------- Notes de décision ---------- */
+.notes { padding: 20px 16px 32px; display: grid; gap: 16px; }
+.notes h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.cartes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.carte { padding: 14px 16px; border: 1px solid var(--trait); border-radius: 8px; background: var(--fond-fen); }
+.carte.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.carte h3 { margin: 0 0 6px; font-size: 15px; }
+.carte dl { margin: 0; display: grid; gap: 6px; }
+.carte dt { font-weight: 600; font-size: 12px; color: var(--texte-2); text-transform: uppercase; letter-spacing: .03em; }
+.carte dd { margin: 0; }
+.reco { padding: 12px 16px; border-left: 3px solid var(--accent); background: var(--fond-fen); border-radius: 4px; }
+
+/* ---------- Téléphone et fenêtres étroites : on empile au lieu de superposer ---------- */
+@media (max-width: 760px) {
+  .bureau { height: auto; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: visible; }
+  .appli { position: static; width: auto; }
+  .fen, .fen-a, .fen-b, .fen-c { position: relative; left: auto; top: auto; transform: none; width: 100%; height: auto; max-height: none; }
+  .liste { max-height: 380px; }
+  .flyout { position: static; width: auto; height: auto; margin: 8px; }
+  .b-corps { grid-template-columns: 1fr; }
+  .rail { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--trait); padding: 6px; }
+  .rail-item { flex: none; }
+  .rail-item .nom { overflow: visible; }
+  .rail-sep { display: none; }
+  .b-liste, .fen-b[data-rendu="winui"] .b-liste { border-right: 0; border-bottom: 1px solid var(--trait); }
+  .fen-b[data-rendu="winui"] .b-corps, .couche-grille { grid-template-columns: 1fr; }
+  .couche { border-right: 1px solid var(--trait); border-radius: 8px 8px 0 0; }
+  .hamburger, .rail-pied { display: none; }
+  .ap-contenu { max-height: 260px; }
+  .toast { position: fixed; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .caret { animation: none; }
+  .el-actions { transition: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="commandes">
+  <p class="reco"><strong>Statut au 13/10/2026 :</strong> proposition B retenue (onglets à gauche et aperçu), en rendu WinUI 3 après comparaison de deux vraies fenêtres. A et C restent en réserve.</p>
+  <h1>Presse-papiers : trois propositions de fenêtre</h1>
+  <p class="sous-titre">Maquette du 13/10/2026. Rien n'est codé, les données sont des exemples. Le style reprend le thème Fluent de Windows 11 que WPF affiche sur .NET 10.</p>
+  <div class="rangee">
+    <div class="groupe" role="group" aria-label="Proposition">
+      <span>Proposition</span>
+      <button class="btn" data-prop="A">A : popup compacte</button>
+      <button class="btn" data-prop="B">B : onglets à gauche et aperçu</button>
+      <button class="btn" data-prop="C">C : recherche d'abord</button>
+    </div>
+  </div>
+  <div class="rangee">
+    <div class="groupe" role="group" aria-label="Thème">
+      <span>Thème</span>
+      <button class="btn" data-theme-choix="light">Clair</button>
+      <button class="btn" data-theme-choix="dark">Sombre</button>
+    </div>
+    <div class="groupe" role="group" aria-label="Mise en forme au collage">
+      <span>Coller avec la mise en forme</span>
+      <button class="btn" data-mef="oui">Oui</button>
+      <button class="btn" data-mef="non">Non</button>
+    </div>
+    <div class="groupe" role="group" aria-label="Rendu de B" id="groupeRendu">
+      <span>B : rendu</span>
+      <button class="btn" data-rendu="wpf">WPF (thème Fluent)</button>
+      <button class="btn" data-rendu="winui">WinUI 3</button>
+    </div>
+    <div class="groupe" role="group" aria-label="Aperçu latéral pour A" id="groupeApercuA">
+      <span>A : aperçu à côté</span>
+      <button class="btn" data-apercu-a="oui">Oui</button>
+      <button class="btn" data-apercu-a="non">Non</button>
+    </div>
+  </div>
+  <div class="rangee">
+    <div class="groupe">
+      <button class="btn btn-accent" id="btnOuvrir">Simuler Win+V</button>
+      <button class="btn" id="btnCopier">Simuler une copie (Ctrl+C)</button>
+      <button class="btn" id="btnSession">Simuler une nouvelle session Windows</button>
+    </div>
+  </div>
+  <p class="aide-clavier">Dans la fenêtre : tape pour chercher, <kbd>↑</kbd> <kbd>↓</kbd> pour choisir, <kbd>Entrée</kbd> pour coller, <kbd>Maj</kbd>+<kbd>Entrée</kbd> pour l'autre mode de mise en forme, <kbd>F2</kbd> pour nommer, <kbd>Suppr</kbd> pour supprimer (champ de recherche vide), <kbd>Tab</kbd> pour changer d'onglet, <kbd>Échap</kbd> pour effacer la recherche puis fermer. Double-clic pour coller.</p>
+</header>
+
+<main class="bureau" id="bureau">
+  <section class="appli" aria-label="Application d'exemple où l'on colle">
+    <div class="appli-titre">Nouveau message</div>
+    <div class="appli-champ">À <b>m.lefebvre-dumontier@exemple.fr</b></div>
+    <div class="appli-champ">Objet <b>Procédure de déploiement</b></div>
+    <div class="appli-corps" id="docCorps">Bonjour,<br><br>Voici ce qu'il faut lancer : <span class="caret" id="caret"></span></div>
+  </section>
+  <div class="fen" id="fenetre"></div>
+  <div class="toast" id="toast" role="status" hidden></div>
+</main>
+
+<section class="notes" aria-label="Notes de décision">
+  <h2>Comparer et choisir</h2>
+  <div class="cartes">
+    <article class="carte" data-carte="A">
+      <h3>A : popup compacte au point de saisie</h3>
+      <dl>
+        <dt>Points forts</dt><dd>Même geste que Win+V : elle s'ouvre là où tu écris, petite, tout au clavier. Les onglets sont des pastilles au-dessus de la liste.</dd>
+        <dt>Limites</dt><dd>Deux lignes d'aperçu seulement : un long texte ou une capture ne se lit pas en entier, sauf avec l'aperçu à côté (interrupteur). Au-delà de six ou sept onglets, la rangée défile.</dd>
+        <dt>Côté code</dt><dd>Une fenêtre WPF sans bordure, une liste virtualisée, une boîte « Nommer ». La plus légère des trois.</dd>
+        <dt>Valeur contre effort</dt><dd>Valeur haute, effort faible.</dd>
+      </dl>
+    </article>
+    <article class="carte" data-carte="B">
+      <h3>B : onglets à gauche et aperçu (retenue)</h3>
+      <dl>
+        <dt>Points forts</dt><dd>On voit l'élément en entier avant de coller (texte complet, capture en grand, liste des fichiers). Nommer et ranger se font sur place, sans boîte de dialogue. Beaucoup d'onglets sans gêne.</dd>
+        <dt>Limites</dt><dd>Plus de deux fois la taille de A, plus « application » que « popup » : elle s'ouvre au centre de l'écran, pas au curseur.</dd>
+        <dt>Côté code</dt><dd>Trois colonnes et un panneau d'aperçu qui sait afficher texte, mise en forme, image et fichiers.</dd>
+        <dt>Valeur contre effort</dt><dd>Valeur haute, effort moyen.</dd>
+      </dl>
+    </article>
+    <article class="carte" data-carte="C">
+      <h3>C : recherche d'abord</h3>
+      <dl>
+        <dt>Points forts</dt><dd>Un grand champ de recherche et tout l'historique mélangé par date : imbattable quand on sait ce qu'on cherche. Les onglets deviennent des filtres.</dd>
+        <dt>Limites</dt><dd>Moins pratique pour parcourir un onglet. S'éloigne du geste Win+V. Les onglets se voient moins.</dd>
+        <dt>Côté code</dt><dd>Proche de A.</dd>
+        <dt>Valeur contre effort</dt><dd>Valeur moyenne, effort faible.</dd>
+      </dl>
+    </article>
+  </div>
+  <article class="carte">
+    <h3>Rendu de B : WPF ou WinUI 3, ce qui change vraiment</h3>
+    <dl>
+      <dt>Commun aux deux</dt><dd>Fond Mica de Windows 11, mode clair ou sombre suivant Windows, couleur d'accentuation, contrôles arrondis : le thème Fluent de WPF (.NET 9 et plus) les applique aussi. La partie technique (écoute des copies, hook Win+V, recollage) est identique.</dd>
+      <dt>Propre à WinUI 3</dt><dd>Barre de titre fondue dans la fenêtre, volet de navigation (NavigationView) avec bouton de repli et entrée Paramètres, couche de contenu arrondie, barre de commandes à icônes, bandeau de message intégré (InfoBar), boîtes de dialogue ContentDialog, animations fluides (la pastille de sélection glisse). Tout est fourni prêt à l'emploi.</dd>
+      <dt>En WPF</dt><dd>Les mêmes éléments s'obtiennent à la main (volet stylé, barre de titre personnalisée) : plus de XAML pour le même aspect. Microsoft marque encore la propriété ThemeMode comme expérimentale, même en .NET 10 ; elle fonctionne en XAML.</dd>
+      <dt>En WinUI 3</dt><dd>Technologie nouvelle pour toi, pas de concepteur visuel, livraison qui dépend du runtime Windows App SDK.</dd>
+    </dl>
+  </article>
+  <p class="reco"><strong>Ma recommandation :</strong> A avec l'aperçu à côté. Tu gardes le geste rapide de Win+V, et l'aperçu règle la seule vraie limite de la popup (lire un long texte ou une capture avant de coller). B se justifie si tu passes souvent du temps à ranger tes éléments nommés.</p>
+</section>
+
+<dialog class="dlg" id="dlgNommer" aria-labelledby="dlgNommerTitre">
+  <form method="dialog">
+    <h2 id="dlgNommerTitre">Nommer et enregistrer</h2>
+    <p class="dlg-apercu" id="dlgNommerApercu"></p>
+    <label>Nom
+      <input id="nomSaisi" required maxlength="120" autocomplete="off" placeholder="Par exemple : Commande de publication">
+    </label>
+    <label>Onglet
+      <select id="ongletChoisi"></select>
+    </label>
+    <label id="lblNouvelOnglet" hidden>Nom du nouvel onglet
+      <input id="nouvelOngletSaisi" maxlength="40" autocomplete="off">
+    </label>
+    <menu>
+      <button class="btn" value="annuler" formnovalidate>Annuler</button>
+      <button class="btn btn-accent" value="ok">Enregistrer</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog class="dlg" id="dlgOnglet" aria-labelledby="dlgOngletTitre">
+  <form method="dialog">
+    <h2 id="dlgOngletTitre">Nouvel onglet</h2>
+    <label>Nom de l'onglet
+      <input id="ongletSaisi" required maxlength="40" autocomplete="off" placeholder="Par exemple : Clients">
+    </label>
+    <menu>
+      <button class="btn" value="annuler" formnovalidate>Annuler</button>
+      <button class="btn btn-accent" value="ok">Créer</button>
+    </menu>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+
+/* Icônes en SVG simples : pas d'emoji dans une interface (règle de lisibilité et de cohérence). */
+const ico = {
+  loupe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+  fermer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  texte: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 6h14M5 10h14M5 14h10M5 18h7"/></svg>',
+  code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></svg>',
+  riche: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 18 9 6l5 12M6 14h6M15 18v-6a2.5 2.5 0 0 1 5 0v6M15 15h5"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m4 18 5-5 4 4 3-3 4 4"/></svg>',
+  fichiers: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M4 7v14h11"/></svg>',
+  fichier: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg>',
+  etiquette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.4"/></svg>',
+  corbeille: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  horloge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>',
+  dossier: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h6l2 2h10v11H3z"/></svg>',
+};
+
+/* Vignette de capture d'écran dessinée en SVG : aucune image externe à charger. */
+function svgCapture(l, h) {
+  return `<svg viewBox="0 0 160 100" width="${l}" height="${h}" aria-hidden="true">
+    <rect width="160" height="100" fill="#3b6ea5"/>
+    <rect x="12" y="12" width="98" height="66" rx="4" fill="#ffffff"/>
+    <rect x="12" y="12" width="98" height="11" rx="4" fill="#dfe6ee"/>
+    <rect x="20" y="31" width="62" height="6" rx="3" fill="#c4cfdb"/>
+    <rect x="20" y="43" width="80" height="6" rx="3" fill="#c4cfdb"/>
+    <rect x="20" y="55" width="44" height="6" rx="3" fill="#c4cfdb"/>
+    <rect x="118" y="24" width="30" height="54" rx="4" fill="#f6c453"/>
+    <rect x="0" y="88" width="160" height="12" fill="#1f3d5c"/>
+  </svg>`;
+}
+
+/* ---------- Données d'exemple : les valeurs longues servent à tester la mise en page ---------- */
+const onglets = [
+  { id: "temp", nom: "Temporaire", fixe: true },
+  { id: "code", nom: "Code" },
+  { id: "adr", nom: "Adresses" },
+  { id: "mails", nom: "Modèles de mails" },
+];
+
+let compteur = 100;
+let prochainId = 100;
+let elements = [
+  { id: 1, onglet: "temp", type: "texte", mono: true, source: "Terminal", heure: "09:42",
+    contenu: 'git log --oneline --graph --decorate --all -- "src/Services/Presse papiers/HistoriqueService.cs"' },
+  { id: 2, onglet: "temp", type: "image", source: "Outil Capture d'écran", heure: "09:38",
+    contenu: "Capture d'écran", dims: "1920 × 1080" },
+  { id: 3, onglet: "temp", type: "fichiers", source: "Explorateur de fichiers", heure: "09:30",
+    fichiers: [
+      "C:\\Mes Projets\\Autres\\IndicateurVerrouTouche\\docs\\superpowers\\specs\\2026-06-10-indicateur-verrou-touche-design.md",
+      "C:\\Mes Projets\\Autres\\IndicateurVerrouTouche\\README.md",
+      "D:\\Partage\\Procédures\\Procédure de déploiement des postes de l'atelier (version 3).docx",
+    ] },
+  { id: 4, onglet: "temp", type: "riche", source: "Outlook", heure: "09:21",
+    contenu: "Bonjour Madame Lefebvre-Dumontier, suite à notre échange téléphonique de ce matin, je vous confirme la livraison de la commande n° 2026-10-0457 jeudi 16 octobre entre 8 h et 10 h, quai 4.",
+    html: "<p>Bonjour Madame <b>Lefebvre-Dumontier</b>,</p><p>Suite à notre échange téléphonique de ce matin, je vous confirme la livraison de la commande <b style=\"color:#c42b1c\">n° 2026-10-0457</b> jeudi 16 octobre entre <u>8 h et 10 h</u>, quai 4.</p>" },
+  { id: 5, onglet: "temp", type: "texte", source: "Microsoft Edge", heure: "09:15",
+    contenu: "https://learn.microsoft.com/fr-fr/windows/win32/dataxchg/using-the-clipboard#monitoring-clipboard-contents" },
+  { id: 6, onglet: "temp", type: "texte", source: "Teams", heure: "09:02", contenu: "06 12 34 56 78" },
+  { id: 7, onglet: "temp", type: "texte", mono: true, source: "SQL Server Management Studio", heure: "08:55",
+    contenu: "SELECT c.IDClient, c.RaisonSociale, SUM(f.MontantHT) AS CA2026\nFROM Client c\nJOIN Facture f ON f.IDClient = c.IDClient\nWHERE f.DateFacture >= '2026-01-01'\nGROUP BY c.IDClient, c.RaisonSociale\nORDER BY CA2026 DESC;" },
+  { id: 20, onglet: "code", nom: "Publier la version Release autonome", type: "texte", mono: true, source: "Terminal", heure: "le 08/10",
+    contenu: "dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true" },
+  { id: 21, onglet: "code", nom: "Clients actifs avec chiffre d'affaires de l'année", type: "texte", mono: true, source: "SQL Server Management Studio", heure: "le 02/10",
+    contenu: "SELECT c.IDClient, c.RaisonSociale, SUM(f.MontantHT) AS CA\nFROM Client c JOIN Facture f ON f.IDClient = c.IDClient\nWHERE YEAR(f.DateFacture) = YEAR(GETDATE())\nGROUP BY c.IDClient, c.RaisonSociale;" },
+  { id: 30, onglet: "adr", nom: "Adresse de livraison de l'entrepôt de Saint-Étienne-du-Rouvray (quai 4, accès poids lourds)", type: "texte", source: "Outlook", heure: "le 29/09",
+    contenu: "Entrepôt Nord, quai 4\n12 rue des Tanneurs\n76800 Saint-Étienne-du-Rouvray" },
+  { id: 31, onglet: "adr", nom: "Siège", type: "texte", source: "Word", heure: "le 15/09",
+    contenu: "3 place de la Mairie, 27000 Évreux" },
+  { id: 40, onglet: "mails", nom: "Relance de facture impayée (formule polie)", type: "riche", source: "Outlook", heure: "le 22/09",
+    contenu: "Madame, Monsieur, sauf erreur de notre part, la facture ci-jointe reste impayée à ce jour. Nous vous remercions de bien vouloir procéder à son règlement.",
+    html: "<p>Madame, Monsieur,</p><p>Sauf erreur de notre part, la facture ci-jointe reste <b>impayée</b> à ce jour. Nous vous remercions de bien vouloir procéder à son règlement.</p>" },
+];
+// Ordre d'affichage : le plus récent en haut.
+elements.forEach((e, i) => { e.ordre = 100 - i; });
+
+/* Copies simulées par le bouton « Simuler une copie ». */
+const filCopies = [
+  { type: "texte", source: "Microsoft Edge", contenu: "https://github.com/hluk/CopyQ/issues/1668" },
+  { type: "texte", source: "Teams", contenu: "Réunion de chantier jeudi 16/10 à 14 h 30, salle Rouen 2" },
+  { type: "texte", mono: true, source: "Terminal", contenu: "dotnet new wpf -n PressePapiers --framework net10.0" },
+  { type: "image", source: "Outil Capture d'écran", contenu: "Capture d'écran", dims: "1280 × 720" },
+];
+let indexCopie = 0;
+
+const etat = {
+  prop: "B",
+  theme: "light",
+  ouvert: true,
+  onglet: "temp",
+  filtre: "tout",
+  recherche: "",
+  selection: null,
+  miseEnForme: true,
+  apercuA: true,
+  rendu: "wpf",
+  infobar: "",
+};
+
+/* ---------- Outils ---------- */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// Recherche insensible aux accents et à la casse : « deploiement » trouve « Déploiement ».
+const normaliser = s => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const nomOnglet = id => (onglets.find(o => o.id === id) || { nom: "?" }).nom;
+const elementPar = id => elements.find(e => e.id === id);
+const nomFichier = p => p.split("\\").pop();
+
+function correspond(e, q) {
+  const texte = normaliser([e.nom, e.contenu, (e.fichiers || []).join(" "), e.source, nomOnglet(e.onglet)].join(" "));
+  return q.split(/\s+/).filter(Boolean).every(m => texte.includes(m));
+}
+
+/* A et B : la recherche parcourt tous les onglets. C : elle s'applique au filtre choisi (Tout par défaut). */
+function visibles() {
+  const q = normaliser(etat.recherche.trim());
+  let liste;
+  if (etat.prop === "C") {
+    liste = etat.filtre === "tout" ? elements.slice() : elements.filter(e => e.onglet === etat.filtre);
+    if (q) liste = liste.filter(e => correspond(e, q));
+  } else if (q) {
+    liste = elements.filter(e => correspond(e, q));
+  } else {
+    liste = elements.filter(e => e.onglet === etat.onglet);
+  }
+  return liste.sort((a, b) => b.ordre - a.ordre);
+}
+
+function apercuCourt(e) {
+  if (e.type === "image") return `${e.contenu}, ${e.dims}`;
+  if (e.type === "fichiers") return `${e.fichiers.length} fichiers : ${e.fichiers.map(nomFichier).join(", ")}`;
+  return e.contenu.replace(/\s+/g, " ");
+}
+
+function icoType(e) {
+  if (e.type === "image") return ico.image;
+  if (e.type === "fichiers") return ico.fichiers;
+  if (e.type === "riche") return ico.riche;
+  return e.mono ? ico.code : ico.texte;
+}
+
+function compteOnglet(id) { return elements.filter(e => e.onglet === id).length; }
+
+/* ---------- Morceaux de vue partagés ---------- */
+function barreTitre() {
+  return `<div class="barre-titre"><strong>Presse-papiers</strong><span class="badge">Win+V</span>
+    <button class="btn-icone" data-action="fermer" title="Fermer (Échap)" aria-label="Fermer">${ico.fermer}</button></div>`;
+}
+
+function champRecherche(placeholder) {
+  return `<div class="zone-recherche">${ico.loupe}<input class="champ-recherche" type="search" value="${esc(etat.recherche)}"
+    placeholder="${esc(placeholder)}" aria-label="Rechercher"></div>`;
+}
+
+function bandeau() {
+  if (etat.recherche.trim()) {
+    return etat.prop === "C" ? "" : `<p class="bandeau-recherche">Résultats dans tous les onglets</p>`;
+  }
+  const temp = etat.prop === "C" ? etat.filtre === "temp" : etat.onglet === "temp";
+  return temp ? `<p class="bandeau-temp">Vidé à la prochaine ouverture de session Windows. <kbd>F2</kbd> pour garder un élément sous un nom.</p>` : "";
+}
+
+function badgeOnglet(e) {
+  const montrer = etat.recherche.trim() || (etat.prop === "C" && etat.filtre === "tout");
+  return montrer ? `<span class="badge">${esc(nomOnglet(e.onglet))}</span>` : "";
+}
+
+function ligne(e) {
+  const sel = e.id === etat.selection;
+  return `<li class="el${sel ? " sel" : ""}" role="option" aria-selected="${sel}" data-id="${e.id}">
+    <span class="el-ico">${icoType(e)}</span>
+    <span class="el-txt">
+      ${e.nom ? `<span class="el-nom">${esc(e.nom)}</span>` : ""}
+      <span class="el-apercu${e.mono ? " mono" : ""}">${esc(apercuCourt(e))}</span>
+      <span class="el-meta">${badgeOnglet(e)}<span>${esc(e.source)} · ${esc(e.heure)}</span>${e.type === "riche" ? '<span class="badge-aa">mise en forme</span>' : ""}</span>
+    </span>
+    ${e.type === "image" ? `<span class="el-vignette">${svgCapture(64, 40)}</span>` : ""}
+    <span class="el-actions">
+      <button class="btn-icone" data-action="nommer" data-id="${e.id}" title="${e.nom ? "Renommer ou déplacer" : "Nommer et enregistrer"} (F2)" aria-label="Nommer">${ico.etiquette}</button>
+      <button class="btn-icone" data-action="supprimer" data-id="${e.id}" title="Supprimer (Suppr)" aria-label="Supprimer">${ico.corbeille}</button>
+    </span>
+  </li>`;
+}
+
+function listeHtml(liste) {
+  const vide = etat.recherche.trim()
+    ? `Aucun élément ne contient « ${esc(etat.recherche.trim())} ». La recherche porte sur les ${elements.length} éléments d'exemple de la maquette.`
+    : "Aucun élément dans cet onglet.";
+  return `<ul class="liste" role="listbox" aria-label="Éléments">${liste.map(ligne).join("") || `<li class="vide">${vide}</li>`}</ul>`;
+}
+
+function aide() {
+  const inverse = etat.miseEnForme ? "en texte brut" : "avec la mise en forme";
+  return `<span><kbd>Entrée</kbd> coller</span><span><kbd>Maj</kbd>+<kbd>Entrée</kbd> ${inverse}</span><span><kbd>F2</kbd> nommer</span><span><kbd>Suppr</kbd> supprimer</span><span><kbd>Tab</kbd> onglet suivant</span>`;
+}
+
+function contenuComplet(e) {
+  if (e.type === "image") return `<div style="line-height:0;border-radius:4px;overflow:hidden;border:1px solid var(--trait)">${svgCapture("100%", "auto")}</div><p class="texte-plein" style="margin-top:8px">${esc(e.contenu)}, ${esc(e.dims)}</p>`;
+  if (e.type === "fichiers") return `<ul class="fichiers">${e.fichiers.map(f => `<li>${ico.fichier}<span>${esc(f)}</span></li>`).join("")}</ul>`;
+  if (e.type === "riche") return etat.miseEnForme ? `<div class="riche">${e.html}</div>` : `<p class="texte-plein">${esc(e.contenu)}</p>`;
+  return e.mono ? `<pre>${esc(e.contenu)}</pre>` : `<p class="texte-plein">${esc(e.contenu)}</p>`;
+}
+
+function taille(e) {
+  if (e.type === "image") return e.dims;
+  if (e.type === "fichiers") return `${e.fichiers.length} fichiers`;
+  return `${e.contenu.length.toLocaleString("fr-FR")} caractères`;
+}
+
+/* ---------- A : popup compacte ---------- */
+function vueA(liste) {
+  const sel = elementPar(etat.selection);
+  const pastilles = onglets.map(o => `<button class="onglet" role="tab" data-onglet="${o.id}"
+      aria-selected="${!etat.recherche.trim() && etat.onglet === o.id}">${o.fixe ? ico.horloge.replace("<svg", '<svg width="14" height="14"') : ""}${esc(o.nom)} <span class="compte">${compteOnglet(o.id)}</span></button>`).join("");
+  return `${barreTitre()}
+    ${champRecherche("Rechercher dans tout l'historique")}
+    <div class="onglets${etat.recherche.trim() ? " attenues" : ""}" role="tablist" aria-label="Onglets">${pastilles}
+      <button class="onglet onglet-plus" data-action="nouvel-onglet" title="Nouvel onglet" aria-label="Nouvel onglet">${ico.plus.replace("<svg", '<svg width="14" height="14"')}</button></div>
+    ${bandeau()}
+    ${listeHtml(liste)}
+    <div class="pied">${aide()}</div>
+    ${etat.apercuA ? `<aside class="flyout" aria-label="Aperçu"><h3>Aperçu</h3>
+      ${sel ? `<div class="ap-contenu">${contenuComplet(sel)}</div><p class="ap-meta">${esc(sel.source)} · ${esc(sel.heure)} · ${esc(taille(sel))}</p>` : `<p class="ap-vide">Aucun élément sélectionné.</p>`}
+    </aside>` : ""}`;
+}
+
+/* ---------- B : onglets à gauche et aperçu éditable ----------
+   Deux rendus. WPF : barre de titre système, contrôles standards restylés par le thème Fluent.
+   WinUI 3 : barre de titre fondue dans la fenêtre, NavigationView, couche de contenu arrondie,
+   barre de commandes et InfoBar, tels que les fournit la bibliothèque de contrôles. */
+const i16 = svg => svg.replace("<svg", '<svg width="16" height="16"');
+
+function legende() {
+  return `<span class="legende" aria-hidden="true">
+    <span class="legende-btn"><svg viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor"/></svg></span>
+    <span class="legende-btn"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" fill="none" stroke="currentColor"/></svg></span>
+    <span class="legende-btn fermer" data-action="fermer"><svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0 0 10" stroke="currentColor"/></svg></span>
+  </span>`;
+}
+
+function vueB(liste) {
+  const winui = etat.rendu === "winui";
+  const sel = elementPar(etat.selection);
+  const rail = onglets.map((o, i) => `${i === 1 && !winui ? '<div class="rail-sep"></div>' : ""}<button class="rail-item" role="tab" data-onglet="${o.id}"
+      aria-selected="${!etat.recherche.trim() && etat.onglet === o.id}">${i16(o.fixe ? ico.horloge : ico.dossier)}
+      <span class="nom">${esc(o.nom)}</span><span class="compte">${compteOnglet(o.id)}</span></button>`).join("");
+
+  let apercu = `<p class="ap-vide">Aucun élément sélectionné.</p>`;
+  if (sel) {
+    const options = onglets.filter(o => !o.fixe).map(o => `<option value="${o.id}"${o.id === sel.onglet ? " selected" : ""}>${esc(o.nom)}</option>`).join("");
+    const inverse = etat.miseEnForme ? "Texte brut" : "Avec mise en forme";
+    const commandes = winui
+      ? `<div class="commandbar" role="toolbar" aria-label="Commandes">
+          <button class="appbar-btn" data-action="coller">${i16(ico.texte)}<span>Coller</span></button>
+          <button class="appbar-btn" data-action="coller-inverse">${i16(ico.riche)}<span>${inverse}</span></button>
+          <button class="appbar-btn" data-action="nommer" data-id="${sel.id}">${i16(ico.etiquette)}<span>Nommer</span></button>
+          <button class="appbar-btn" data-action="supprimer" data-id="${sel.id}">${i16(ico.corbeille)}<span>Supprimer</span></button>
+        </div>`
+      : "";
+    apercu = `${commandes}
+      <div class="ap-entete">
+        <label>Nom <input class="champ-nom" value="${esc(sel.nom || "")}" placeholder="Sans nom : reste dans Temporaire" maxlength="120" autocomplete="off"></label>
+        <div class="ap-ligne">
+          <label>Onglet <select class="champ-onglet">${sel.onglet === "temp" ? '<option value="" selected disabled>Choisir un onglet</option>' : ""}${options}</select></label>
+          <button class="btn btn-accent" data-action="enregistrer-b">Enregistrer</button>
+        </div>
+      </div>
+      <div class="ap-contenu">${contenuComplet(sel)}</div>
+      <p class="ap-meta">Copié depuis ${esc(sel.source)}, ${esc(sel.heure)} · ${esc(taille(sel))}</p>
+      ${winui ? "" : `<div class="ap-actions">
+        <button class="btn btn-accent" data-action="coller">Coller</button>
+        <button class="btn" data-action="coller-inverse">Coller ${etat.miseEnForme ? "en texte brut" : "avec la mise en forme"}</button>
+        <button class="btn" data-action="supprimer" data-id="${sel.id}">Supprimer</button>
+      </div>`}`;
+  }
+
+  const recherche = winui
+    ? `<div class="zone-recherche asb"><input class="champ-recherche" type="search" value="${esc(etat.recherche)}"
+        placeholder="Rechercher dans tout l'historique" aria-label="Rechercher">${ico.loupe}</div>`
+    : champRecherche("Rechercher dans tout l'historique");
+  const infobar = winui && etat.infobar
+    ? `<div class="infobar" role="status"><span class="infobar-ico" aria-hidden="true"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="8" fill="currentColor"/><path d="m4.5 8.2 2.3 2.3 4.7-4.8" fill="none" stroke="#fff" stroke-width="1.6"/></svg></span>
+        <span class="infobar-txt">${esc(etat.infobar)}</span>
+        <button class="btn-icone" data-action="fermer-infobar" aria-label="Fermer le message">${i16(ico.fermer)}</button></div>`
+    : "";
+  const navigation = `<nav class="rail" role="tablist" aria-label="Onglets">
+      ${winui ? `<button class="btn-icone hamburger" aria-label="Réduire le volet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>` : ""}
+      ${rail}
+      <button class="rail-item rail-plus" data-action="nouvel-onglet">${i16(ico.plus)}<span class="nom">Nouvel onglet</span></button>
+      ${winui ? `<div class="rail-pied"><button class="rail-item"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg><span class="nom">Paramètres</span></button></div>` : ""}
+    </nav>`;
+  const listeEtApercu = `<div class="b-liste">${recherche}${bandeau()}${listeHtml(liste)}</div>
+      <aside class="apercu" aria-label="Aperçu et rangement">${apercu}</aside>`;
+
+  return `<div class="barre-systeme">
+      <span class="app-ico" aria-hidden="true">${i16(ico.fichiers)}</span>
+      <span class="titre">Presse-papiers${winui ? ' <span class="badge">Win+V</span>' : ""}</span>
+      ${legende()}
+    </div>
+    <div class="b-corps">
+      ${navigation}
+      ${winui ? `<div class="couche">${infobar}<div class="couche-grille">${listeEtApercu}</div></div>` : listeEtApercu}
+    </div>
+    <div class="pied">${aide()}</div>`;
+}
+
+/* ---------- C : recherche d'abord ---------- */
+function vueC(liste) {
+  const filtres = [{ id: "tout", nom: "Tout" }, ...onglets].map(o => `<button class="onglet" role="tab" data-filtre="${o.id}"
+      aria-selected="${etat.filtre === o.id}">${esc(o.nom)}${o.id === "tout" ? "" : ` <span class="compte">${compteOnglet(o.id)}</span>`}</button>`).join("");
+  return `${champRecherche("Rechercher un élément copié…")}
+    <div class="filtres" role="tablist" aria-label="Filtres">${filtres}</div>
+    ${bandeau()}
+    ${listeHtml(liste)}
+    <div class="pied">${aide()}</div>`;
+}
+
+/* ---------- Rendu ---------- */
+let dernierContexte = "";
+function rendre(garderFocus) {
+  document.documentElement.dataset.theme = etat.theme;
+  majCommandes();
+  const f = document.getElementById("fenetre");
+  f.hidden = !etat.ouvert;
+  if (!etat.ouvert) return;
+  f.className = "fen fen-" + etat.prop.toLowerCase();
+  f.dataset.rendu = etat.rendu;
+  if (etat.prop !== "B" || etat.rendu !== "winui") etat.infobar = "";
+  f.setAttribute("role", "dialog");
+  f.setAttribute("aria-label", "Presse-papiers");
+  const liste = visibles();
+  if (!liste.some(e => e.id === etat.selection)) etat.selection = liste.length ? liste[0].id : null;
+  // Une autre liste (proposition, onglet, filtre ou recherche différents) repart du haut.
+  const contexte = [etat.prop, etat.onglet, etat.filtre, etat.recherche].join("|");
+  const defilementAvant = contexte === dernierContexte ? (f.querySelector(".liste")?.scrollTop || 0) : 0;
+  dernierContexte = contexte;
+  f.innerHTML = etat.prop === "A" ? vueA(liste) : etat.prop === "B" ? vueB(liste) : vueC(liste);
+  // On garde la position de défilement de la liste et on n'amène la sélection en vue que dans la liste :
+  // scrollIntoView ferait aussi défiler la page entière.
+  const l = f.querySelector(".liste");
+  const sel = f.querySelector(".el.sel");
+  if (l) {
+    l.scrollTop = defilementAvant;
+    if (sel) {
+      const rl = l.getBoundingClientRect(), rs = sel.getBoundingClientRect();
+      if (rs.top < rl.top) l.scrollTop -= rl.top - rs.top;
+      else if (rs.bottom > rl.bottom) l.scrollTop += rs.bottom - rl.bottom;
+    }
+  }
+  if (!garderFocus) {
+    const champ = f.querySelector(".champ-recherche");
+    if (champ) {
+      champ.focus({ preventScroll: true });
+      champ.setSelectionRange(champ.value.length, champ.value.length);
+    }
+  }
+}
+
+function majCommandes() {
+  document.querySelectorAll("[data-prop]").forEach(b => b.setAttribute("aria-pressed", b.dataset.prop === etat.prop));
+  document.querySelectorAll("[data-theme-choix]").forEach(b => b.setAttribute("aria-pressed", b.dataset.themeChoix === etat.theme));
+  document.querySelectorAll("[data-mef]").forEach(b => b.setAttribute("aria-pressed", (b.dataset.mef === "oui") === etat.miseEnForme));
+  document.querySelectorAll("[data-apercu-a]").forEach(b => b.setAttribute("aria-pressed", (b.dataset.apercuA === "oui") === etat.apercuA));
+  document.querySelectorAll("[data-rendu]").forEach(b => b.setAttribute("aria-pressed", b.dataset.rendu === etat.rendu));
+  document.getElementById("groupeApercuA").style.opacity = etat.prop === "A" ? "1" : ".45";
+  document.getElementById("groupeRendu").style.opacity = etat.prop === "B" ? "1" : ".45";
+  // Les boîtes de dialogue prennent l'allure ContentDialog en rendu WinUI 3.
+  document.querySelectorAll(".dlg").forEach(d => d.classList.toggle("winui", etat.prop === "B" && etat.rendu === "winui"));
+  document.querySelectorAll("[data-carte]").forEach(c => c.classList.toggle("active", c.dataset.carte === etat.prop));
+}
+
+let minuterieToast;
+function toast(message) {
+  // En rendu WinUI 3, un enregistrement s'annonce dans l'InfoBar de la fenêtre, comme le ferait l'application.
+  if (etat.prop === "B" && etat.rendu === "winui" && etat.ouvert && /enregistré dans|créé/.test(message)) {
+    etat.infobar = message;
+    rendre();
+    return;
+  }
+  const t = document.getElementById("toast");
+  t.textContent = message;
+  t.hidden = false;
+  clearTimeout(minuterieToast);
+  minuterieToast = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* ---------- Actions ---------- */
+function coller(id, inverse) {
+  const e = elementPar(id);
+  if (!e) return;
+  const avecMiseEnForme = e.type === "riche" && (etat.miseEnForme !== !!inverse);
+  const caret = document.getElementById("caret");
+  const span = document.createElement("span");
+  span.className = "doc-colle";
+  if (e.type === "image") span.innerHTML = `<span class="doc-img">${svgCapture(160, 100)}</span>`;
+  else if (e.type === "fichiers") span.innerHTML = e.fichiers.map(esc).join("<br>");
+  else if (avecMiseEnForme) span.innerHTML = e.html;
+  else span.innerHTML = esc(e.contenu).replace(/\n/g, "<br>");
+  caret.before(span, document.createTextNode(" "));
+  // Un élément temporaire recollé remonte en tête : c'est le dernier utilisé.
+  if (e.onglet === "temp") e.ordre = ++compteur;
+  etat.ouvert = false;
+  etat.recherche = "";
+  rendre();
+  const mode = e.type === "riche" ? (avecMiseEnForme ? " avec la mise en forme" : " en texte brut") : "";
+  toast(`Collé dans « Nouveau message »${mode}.`);
+}
+
+function supprimer(id) {
+  const e = elementPar(id);
+  if (!e) return;
+  const liste = visibles();
+  const i = liste.findIndex(x => x.id === id);
+  elements = elements.filter(x => x.id !== id);
+  const reste = liste.filter(x => x.id !== id);
+  etat.selection = reste.length ? reste[Math.min(i, reste.length - 1)].id : null;
+  rendre();
+  toast(e.nom ? `« ${e.nom} » supprimé.` : "Élément supprimé.");
+}
+
+function remplirOptionsOnglets(select, ongletActuel) {
+  select.innerHTML = onglets.filter(o => !o.fixe).map(o => `<option value="${o.id}"${o.id === ongletActuel ? " selected" : ""}>${esc(o.nom)}</option>`).join("")
+    + '<option value="__nouveau">Nouvel onglet…</option>';
+}
+
+function nommer(id) {
+  const e = elementPar(id);
+  if (!e) return;
+  // B range sur place dans le panneau d'aperçu : pas de boîte de dialogue.
+  if (etat.prop === "B") {
+    etat.selection = id;
+    rendre(true);
+    document.querySelector(".champ-nom")?.focus();
+    return;
+  }
+  const dlg = document.getElementById("dlgNommer");
+  document.getElementById("dlgNommerTitre").textContent = e.nom ? "Renommer ou déplacer" : "Nommer et enregistrer";
+  document.getElementById("dlgNommerApercu").textContent = apercuCourt(e);
+  document.getElementById("nomSaisi").value = e.nom || "";
+  remplirOptionsOnglets(document.getElementById("ongletChoisi"), e.onglet === "temp" ? "code" : e.onglet);
+  document.getElementById("lblNouvelOnglet").hidden = true;
+  document.getElementById("nouvelOngletSaisi").value = "";
+  dlg.dataset.id = id;
+  dlg.returnValue = "";
+  dlg.showModal();
+}
+
+function creerOnglet(nom) {
+  const id = "o" + (++prochainId);
+  onglets.push({ id, nom });
+  return id;
+}
+
+function ranger(e, nom, ongletId) {
+  const etaitTemp = e.onglet === "temp";
+  e.nom = nom;
+  e.onglet = ongletId;
+  etat.recherche = "";
+  if (etat.prop === "C") { if (etat.filtre !== "tout") etat.filtre = ongletId; }
+  else if (etaitTemp) {
+    // On reste dans Temporaire pour enchaîner : l'élément nommé en sort.
+    etat.onglet = "temp";
+  } else etat.onglet = ongletId;
+  rendre();
+  toast(`« ${nom} » enregistré dans ${nomOnglet(ongletId)}.`);
+}
+
+function enregistrerB() {
+  const e = elementPar(etat.selection);
+  const nom = document.querySelector(".champ-nom")?.value.trim();
+  const ongletId = document.querySelector(".champ-onglet")?.value;
+  if (!e) return;
+  if (!nom) { toast("Donne un nom pour enregistrer l'élément."); document.querySelector(".champ-nom")?.focus(); return; }
+  if (!ongletId) { toast("Choisis l'onglet où le ranger."); document.querySelector(".champ-onglet")?.focus(); return; }
+  ranger(e, nom, ongletId);
+}
+
+function changerOnglet(pas) {
+  if (etat.prop === "C") {
+    const ids = ["tout", ...onglets.map(o => o.id)];
+    etat.filtre = ids[(ids.indexOf(etat.filtre) + pas + ids.length) % ids.length];
+  } else {
+    const ids = onglets.map(o => o.id);
+    etat.recherche = "";
+    etat.onglet = ids[(ids.indexOf(etat.onglet) + pas + ids.length) % ids.length];
+  }
+  etat.selection = null;
+  rendre();
+}
+
+/* ---------- Événements ---------- */
+let dernierClic = { id: null, t: 0 };
+
+document.getElementById("fenetre").addEventListener("click", ev => {
+  const action = ev.target.closest("[data-action]");
+  if (action) {
+    ev.stopPropagation();
+    const id = Number(action.dataset.id) || etat.selection;
+    switch (action.dataset.action) {
+      case "fermer": etat.ouvert = false; rendre(); break;
+      case "fermer-infobar": etat.infobar = ""; rendre(); break;
+      case "nommer": nommer(id); break;
+      case "supprimer": supprimer(id); break;
+      case "coller": coller(etat.selection, false); break;
+      case "coller-inverse": coller(etat.selection, true); break;
+      case "enregistrer-b": enregistrerB(); break;
+      case "nouvel-onglet": {
+        const d = document.getElementById("dlgOnglet");
+        document.getElementById("ongletSaisi").value = "";
+        d.returnValue = "";
+        d.showModal();
+        break;
+      }
+    }
+    return;
+  }
+  const onglet = ev.target.closest("[data-onglet]");
+  if (onglet) { etat.onglet = onglet.dataset.onglet; etat.recherche = ""; etat.selection = null; rendre(); return; }
+  const filtre = ev.target.closest("[data-filtre]");
+  if (filtre) { etat.filtre = filtre.dataset.filtre; etat.selection = null; rendre(); return; }
+  const li = ev.target.closest(".el");
+  if (li) {
+    const id = Number(li.dataset.id);
+    const maintenant = performance.now();
+    // Double-clic détecté à la main : le premier clic redessine la liste, l'événement natif se perdrait.
+    if (dernierClic.id === id && maintenant - dernierClic.t < 450) { coller(id, false); dernierClic = { id: null, t: 0 }; return; }
+    dernierClic = { id, t: maintenant };
+    etat.selection = id;
+    rendre();
+  }
+});
+
+document.getElementById("fenetre").addEventListener("input", ev => {
+  if (ev.target.classList.contains("champ-recherche")) {
+    etat.recherche = ev.target.value;
+    etat.selection = null;
+    rendre();
+  }
+});
+
+document.addEventListener("keydown", ev => {
+  if (!etat.ouvert || document.querySelector("dialog[open]")) return;
+  const cible = ev.target;
+  if (cible.closest?.(".commandes")) return;
+  // Dans le panneau d'aperçu de B, les touches servent aux champs Nom et Onglet.
+  if (cible.closest?.(".apercu")) {
+    if (ev.key === "Enter" && cible.classList.contains("champ-nom")) { ev.preventDefault(); enregistrerB(); }
+    if (ev.key === "Escape") { ev.preventDefault(); rendre(); }
+    return;
+  }
+  const liste = visibles();
+  const i = liste.findIndex(e => e.id === etat.selection);
+  switch (ev.key) {
+    case "ArrowDown":
+      ev.preventDefault();
+      if (liste.length) { etat.selection = liste[Math.min(i + 1, liste.length - 1)].id; rendre(); }
+      break;
+    case "ArrowUp":
+      ev.preventDefault();
+      if (liste.length) { etat.selection = liste[Math.max(i - 1, 0)].id; rendre(); }
+      break;
+    case "Enter":
+      ev.preventDefault();
+      if (etat.selection) coller(etat.selection, ev.shiftKey);
+      break;
+    case "F2":
+      ev.preventDefault();
+      if (etat.selection) nommer(etat.selection);
+      break;
+    case "Delete":
+      if (!etat.recherche && etat.selection) { ev.preventDefault(); supprimer(etat.selection); }
+      break;
+    case "Tab":
+      ev.preventDefault();
+      changerOnglet(ev.shiftKey ? -1 : 1);
+      break;
+    case "Escape":
+      ev.preventDefault();
+      if (etat.recherche) etat.recherche = ""; else etat.ouvert = false;
+      rendre();
+      break;
+  }
+});
+
+/* Un clic hors de la fenêtre la ferme, comme une popup Windows qui perd le focus. */
+document.getElementById("bureau").addEventListener("click", ev => {
+  if (etat.ouvert && !ev.target.closest(".fen")) { etat.ouvert = false; rendre(); }
+});
+
+document.getElementById("ongletChoisi").addEventListener("change", ev => {
+  const nouveau = ev.target.value === "__nouveau";
+  document.getElementById("lblNouvelOnglet").hidden = !nouveau;
+  if (nouveau) document.getElementById("nouvelOngletSaisi").focus();
+});
+
+/* Les boîtes se traitent à la soumission du formulaire (événement synchrone, bouton connu par
+   ev.submitter) plutôt qu'à l'événement close, livré plus tard et pas toujours dans un onglet masqué. */
+document.querySelector("#dlgNommer form").addEventListener("submit", ev => {
+  const dlg = document.getElementById("dlgNommer");
+  if (ev.submitter?.value !== "ok") { setTimeout(() => rendre()); return; }
+  const e = elementPar(Number(dlg.dataset.id));
+  const nom = document.getElementById("nomSaisi").value.trim();
+  let ongletId = document.getElementById("ongletChoisi").value;
+  if (!e || !nom) { ev.preventDefault(); document.getElementById("nomSaisi").focus(); return; }
+  if (ongletId === "__nouveau") {
+    const champ = document.getElementById("nouvelOngletSaisi");
+    if (!champ.value.trim()) { ev.preventDefault(); champ.focus(); return; }
+    ongletId = creerOnglet(champ.value.trim());
+  }
+  setTimeout(() => ranger(e, nom, ongletId));
+});
+
+document.querySelector("#dlgOnglet form").addEventListener("submit", ev => {
+  const nom = document.getElementById("ongletSaisi").value.trim();
+  if (ev.submitter?.value === "ok" && nom) {
+    const id = creerOnglet(nom);
+    if (etat.prop === "C") etat.filtre = id; else { etat.onglet = id; etat.recherche = ""; }
+    etat.selection = null;
+    toast(`Onglet « ${nom} » créé.`);
+  }
+  setTimeout(() => rendre());
+});
+
+document.querySelector(".commandes").addEventListener("click", ev => {
+  const b = ev.target.closest("button");
+  if (!b) return;
+  if (b.dataset.prop) { etat.prop = b.dataset.prop; etat.ouvert = true; etat.selection = null; }
+  else if (b.dataset.themeChoix) etat.theme = b.dataset.themeChoix;
+  else if (b.dataset.mef) etat.miseEnForme = b.dataset.mef === "oui";
+  else if (b.dataset.apercuA) { etat.apercuA = b.dataset.apercuA === "oui"; if (etat.prop === "A") etat.ouvert = true; }
+  else if (b.dataset.rendu) { etat.rendu = b.dataset.rendu; etat.prop = "B"; etat.ouvert = true; etat.infobar = ""; }
+  else if (b.id === "btnOuvrir") { etat.ouvert = true; etat.recherche = ""; }
+  else if (b.id === "btnCopier") {
+    const modele = filCopies[indexCopie++ % filCopies.length];
+    elements.push({ ...modele, id: ++prochainId, onglet: "temp", heure: "à l'instant", ordre: ++compteur });
+    toast("Copie ajoutée en tête de l'onglet Temporaire.");
+  } else if (b.id === "btnSession") {
+    const n = compteOnglet("temp");
+    elements = elements.filter(e => e.onglet !== "temp");
+    toast(`Nouvelle session Windows : ${n} élément${n > 1 ? "s" : ""} temporaire${n > 1 ? "s" : ""} effacé${n > 1 ? "s" : ""}, les éléments nommés restent.`);
+  }
+  rendre();
+});
+
+/* État initial lisible dans l'adresse (?prop=B&theme=dark&sel=4&apercu=non&mef=non) : sert aux
+   captures sans tête et à partager une vue précise de la maquette. */
+(() => {
+  const p = new URLSearchParams(location.search);
+  if (["A", "B", "C"].includes(p.get("prop"))) etat.prop = p.get("prop");
+  if (["light", "dark"].includes(p.get("theme"))) etat.theme = p.get("theme");
+  if (p.get("apercu") === "non") etat.apercuA = false;
+  if (p.get("mef") === "non") etat.miseEnForme = false;
+  if (p.get("rendu") === "winui") etat.rendu = "winui";
+  if (p.has("sel")) etat.selection = Number(p.get("sel"));
+  if (p.has("q")) etat.recherche = p.get("q");
+})();
+
+rendre();
+</script>
+</body>
+</html>
