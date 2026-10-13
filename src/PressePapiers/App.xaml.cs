@@ -1,10 +1,9 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using PressePapiers.Capture;
+using PressePapiers.Coeur.Clavier;
 using PressePapiers.Coeur.Journalisation;
 using PressePapiers.Coeur.Modele;
-using PressePapiers.Coeur.Recherche;
-using PressePapiers.Coeur.Reglages;
 using PressePapiers.Coeur.Session;
 using PressePapiers.Coeur.Stockage;
 using PressePapiers.Interface;
@@ -13,9 +12,9 @@ using PressePapiers.Systeme;
 namespace PressePapiers;
 
 /// <summary>
-/// Application WinUI 3 : cycle de vie et ordre de démarrage de la spec (section 12). Le journal, la base, la détection de
-/// session et la fenêtre principale masquée sont en place ; le relais Windows existe mais n'écoute rien pour
-/// l'instant, l'icône et le hook viennent avec l'assemblage (tâche 29).
+/// Application WinUI 3 : cycle de vie et ordre de démarrage de la spec (section 12). Ce fichier porte le démarrage,
+/// l'arrêt et les exceptions ; la composition des briques (relais, icône, hook, capture, fenêtre) est dans
+/// <c>App.Composition.cs</c>.
 /// </summary>
 public sealed partial class App : Application
 {
@@ -26,11 +25,20 @@ public sealed partial class App : Application
     private readonly DispatcherQueue _fil;
     private readonly IDialogueDemarrage _dialogues = new DialoguesWindows();
 
+    // Un seul anti-rebond pour Win+V et le raccourci de secours : deux signaux à moins de 300 ms n'ouvrent qu'une fois.
+    private readonly AntiRebond _antiRebond = new(TimeProvider.System, TimeSpan.FromMilliseconds(300));
+
     private IJournal _journal = JournalNul.Instance;
     private JournalSerilog? _journalFichier;
     private BaseHistorique? _base;
+    private DepotHistorique? _depot;
     private RelaisWindows? _relais;
+    private IconeNotification? _icone;
+    private ICrochetWinV? _crochet;
+    private ServiceCapture? _capture;
+    private FenetrePrincipaleVue? _vue;
     private FenetrePrincipale? _fenetre;
+    private DispatcherQueueTimer? _minuterieCrochet;
     private bool _prete;
 #if DEBUG
     private DispatcherQueueTimer? _minuterieArret;
@@ -109,7 +117,7 @@ public sealed partial class App : Application
         }
     }
 
-    /// <summary>Affiche la fenêtre principale pour une origine donnée (fil d'interface seulement).</summary>
+    /// <summary>Affiche la fenêtre principale sans fenêtre d'origine (icône, relance) ; fil d'interface seulement.</summary>
     internal void AfficherFenetre(OrigineOuverture origine)
     {
         if (ArretEnCours)
@@ -123,13 +131,13 @@ public sealed partial class App : Application
             return;
         }
 
-        // Pas de fenêtre d'origine fiable pour une relance : Entrée copiera seulement.
+        // Pas de fenêtre d'origine fiable : Entrée copiera seulement.
         _fenetre.AfficherPour(0, origine);
     }
 
     /// <summary>
-    /// Chemin Quitter : lève le drapeau, libère ce que le démarrage a créé dans l'ordre inverse de la création, puis
-    /// termine l'application. Sans effet la seconde fois.
+    /// Chemin Quitter : lève le drapeau, arrête ce qui écrit dans la base (capture, hook), retire l'icône, autorise la
+    /// fenêtre à se fermer, libère le relais, la base et le journal, puis termine l'application. Sans effet la seconde fois.
     /// </summary>
     internal void Quitter()
     {
@@ -145,6 +153,11 @@ public sealed partial class App : Application
 #if DEBUG
             _minuterieArret?.Stop();
 #endif
+            _minuterieCrochet?.Stop();
+            _capture?.Dispose();
+            _crochet?.Dispose();
+            _icone?.Dispose();
+            _fenetre?.AutoriserFermeture();
             _relais?.Dispose();
             _base?.Dispose();
             _journalFichier?.Dispose();
@@ -156,6 +169,9 @@ public sealed partial class App : Application
         }
         finally
         {
+            _capture = null;
+            _crochet = null;
+            _icone = null;
             _relais = null;
             _base = null;
             Exit();
@@ -163,7 +179,7 @@ public sealed partial class App : Application
     }
 
     // Ordre de la spec : journal, dossiers, copie de sécurité et ouverture de la base, détection de session et purge,
-    // fenêtre principale masquée. Le relais, l'icône et le hook suivent à la tâche 29.
+    // fenêtre principale masquée, relais (écoute, raccourci de secours, icône), hook, démarrage avec Windows.
     private void Demarrer()
     {
         var dossiers = DossierDonnees.ParDefaut();
@@ -180,13 +196,17 @@ public sealed partial class App : Application
             return;
         }
 
-        var depot = new DepotHistorique(_base, dossiers, TimeProvider.System, _journal);
+        _journal.Info($"SQLite {_base.VersionSqlite}.");
+        _depot = new DepotHistorique(_base, dossiers, TimeProvider.System, _journal);
 
         // La purge précède tout ce qui peut capturer une copie : jamais d'effacement d'une copie faite après l'ouverture de session.
-        var session = DemarrageSession.Appliquer(new SourceSessionWts(), depot, _journal);
+        var session = DemarrageSession.Appliquer(new SourceSessionWts(), _depot, _journal);
         _journal.Info($"Session Windows : {session.Etat}, {session.ElementsPurges} élément(s) de Temporaire purgé(s).");
 
-        CreerFenetrePrincipale(_base, depot, dossiers);
+        CreerFenetrePrincipale(_base, _depot, dossiers);
+        DemarrerRelais(_depot);
+        DemarrerCrochet();
+        AppliquerDemarrageWindows();
         ProgrammerArretDeRecette();
 
         bool relance;
@@ -201,27 +221,6 @@ public sealed partial class App : Application
         if (relance)
         {
             SurRelance();
-        }
-    }
-
-    // La fenêtre est créée sans être affichée. Son modèle de vue exige le service de collage, donc le relais (simple fenêtre
-    // Win32 invisible, qui n'écoute encore rien) est créé ici ; la tâche 29 y branche l'écoute, l'icône et le hook.
-    private void CreerFenetrePrincipale(BaseHistorique baseHistorique, DepotHistorique depot, DossierDonnees dossiers)
-    {
-        var parametres = new ServiceParametres(dossiers.Parametres, _journal);
-        var recherche = new MoteurRecherche(baseHistorique);
-        _relais = new RelaisWindows(_journal);
-        var recollage = new ServiceRecollage(new EcrivainPressePapiers(_relais.Handle, _journal), depot, _journal);
-
-        try
-        {
-            _fenetre = new FenetrePrincipale(new FenetrePrincipaleVue(depot, recherche, recollage, parametres, _journal));
-        }
-        catch (NotImplementedException exception)
-        {
-            // Provisoire : tant que les tâches 25 à 28 n'ont pas remplacé la coquille, l'application tourne sans fenêtre.
-            // À retirer à la tâche 29.
-            _journal.Avertissement("La fenêtre principale n'est pas encore écrite (tâches 25 à 28) : démarrage sans fenêtre.", exception);
         }
     }
 
@@ -246,7 +245,7 @@ public sealed partial class App : Application
     }
 
     // Recette automatique (versions Debug seulement) : PRESSEPAPIERS_ARRET_APRES_MS demande un arrêt propre, par le chemin
-    // Quitter, au bout de ce délai. Sans icône de notification, c'est le seul moyen de vérifier l'arrêt sans tuer le processus.
+    // Quitter, au bout de ce délai : un moyen de vérifier l'arrêt sans tuer le processus ni cliquer sur l'icône.
     private void ProgrammerArretDeRecette()
     {
 #if DEBUG
