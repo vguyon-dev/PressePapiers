@@ -48,6 +48,10 @@ public sealed class CrochetWinV : ICrochetWinV
     private nuint _minuterieReport;
     private int _reports;
 
+    // Dernier code d'erreur de SetWindowsHookEx déjà journalisé (0 : aucun) : une pose qui échoue chaque minute de la
+    // même façon n'écrit qu'une ligne.
+    private int _dernierCodeEchec;
+
     /// <summary>Crée le hook, sans le démarrer.</summary>
     public CrochetWinV(IJournal journal)
     {
@@ -84,11 +88,14 @@ public sealed class CrochetWinV : ICrochetWinV
             if (Interlocked.CompareExchange(ref _actuel, this, null) is not null)
                 throw new InvalidOperationException("Un autre crochet Win+V est déjà en service dans ce processus.");
 
-            _fil = new Thread(BoucleDuFil) { Name = "CrochetWinV", IsBackground = true };
+            // Priorité haute : le rappel doit répondre en quelques millisecondes même quand la machine est chargée,
+            // sinon chaque frappe de la session attend et Windows retire le hook.
+            _fil = new Thread(BoucleDuFil) { Name = "CrochetWinV", IsBackground = true, Priority = ThreadPriority.Highest };
             _fil.Start();
         }
 
-        // Le fil dit quand l'installation est jouée, réussie ou non ; on n'attend que quelques secondes.
+        // Le fil dit quand l'installation est jouée, réussie ou non ; on n'attend que quelques secondes. En cas de délai
+        // dépassé, le fil peut encore signaler _pret plus tard : il ne doit donc pas être libéré ici.
         if (!_pret.Wait(_delaiDemarrage))
         {
             _raison = "Le fil du hook n'a pas répondu à temps.";
@@ -102,8 +109,9 @@ public sealed class CrochetWinV : ICrochetWinV
         uint idFil;
         lock (_verrou)
         {
-            if (_fil is null || _arrete) return;
-            idFil = _idFilCrochet;
+            // Tant que le fil n'a pas signalé _pret, son identifiant n'est pas connu (et il installe déjà le hook).
+            if (_fil is null || _arrete || !_pret.IsSet) return;
+            idFil = Volatile.Read(ref _idFilCrochet);
         }
 
         // Le remplacement se joue sur le fil du hook, à l'abri des frappes en cours de traitement.
@@ -115,19 +123,20 @@ public sealed class CrochetWinV : ICrochetWinV
     public void Dispose()
     {
         Thread? fil;
-        uint idFil;
         lock (_verrou)
         {
             if (_arrete) return;
             _arrete = true;
             fil = _fil;
-            idFil = _idFilCrochet;
         }
 
-        if (fil is not null)
+        if (fil is not null && !ArreterFil(fil))
         {
-            NatifClavier.PostThreadMessage(idFil, NatifClavier.WM_QUIT, 0, 0);
-            if (!fil.Join(TimeSpan.FromSeconds(2))) _journal.Avertissement("Le fil du hook ne s'est pas arrêté à temps.");
+            // Le fil vit encore : il peut signaler _pret et son rappel parle à _actuel. On laisse les deux en place ;
+            // le fil d'arrière-plan s'éteindra avec le processus.
+            _actif = false;
+            _journal.Avertissement("Le fil du hook ne s'est pas arrêté à temps : il reste en arrière-plan jusqu'à la fin du processus.");
+            return;
         }
 
         _actif = false;
@@ -135,11 +144,18 @@ public sealed class CrochetWinV : ICrochetWinV
         _pret.Dispose();
     }
 
+    // L'identifiant du fil n'est connu qu'une fois sa file de messages créée, ce que signale _pret : poster WM_QUIT
+    // avant ce signal le perdrait, et le fil ne s'arrêterait jamais.
+    private bool ArreterFil(Thread fil) =>
+        _pret.Wait(_delaiDemarrage)
+        && NatifClavier.PostThreadMessage(Volatile.Read(ref _idFilCrochet), NatifClavier.WM_QUIT, 0, 0)
+        && fil.Join(TimeSpan.FromSeconds(2));
+
     private void BoucleDuFil()
     {
         // Un premier PeekMessage crée la file de messages du fil : sans elle PostThreadMessage échouerait.
         NatifClavier.PeekMessage(out _, 0, NatifClavier.WM_USER, NatifClavier.WM_USER, NatifClavier.PM_NOREMOVE);
-        _idFilCrochet = NatifClavier.GetCurrentThreadId();
+        Volatile.Write(ref _idFilCrochet, NatifClavier.GetCurrentThreadId());
 
         var minuteriePeriodique = NatifClavier.SetTimer(0, 0, DelaiPeriodiqueMs, 0);
 
@@ -178,11 +194,13 @@ public sealed class CrochetWinV : ICrochetWinV
         {
             var erreur = Marshal.GetLastWin32Error();
             _raison = $"SetWindowsHookEx a échoué (erreur {erreur}).";
+            _dernierCodeEchec = erreur;
             _journal.Erreur(_raison);
             return;
         }
 
         _automate.Reinitialiser();
+        _dernierCodeEchec = 0;
         _crochetCourant = crochet;
         _raison = null;
         _actif = true;
@@ -213,7 +231,7 @@ public sealed class CrochetWinV : ICrochetWinV
         var neuf = PoserCrochet();
         if (neuf == 0)
         {
-            _journal.Avertissement($"Réinstallation du hook impossible (erreur {Marshal.GetLastWin32Error()}) ; l'ancien reste en place.");
+            NoterEchecPose(Marshal.GetLastWin32Error());
             return;
         }
 
@@ -224,9 +242,30 @@ public sealed class CrochetWinV : ICrochetWinV
         // Le hook ne voit pas les relâchements survenus devant une fenêtre élevée ou l'écran de verrouillage.
         _automate.Reinitialiser();
         _reports = 0;
+        _dernierCodeEchec = 0;
         _raison = null;
         _actif = true;
         _journal.Info("Hook Win+V réinstallé.");
+    }
+
+    // Sans hook en place (premier essai raté, ou retiré par Windows), l'échec laisse Win+V inactif : la raison affichée
+    // le dit. Le journal ne reçoit une ligne qu'au changement de code d'erreur.
+    private void NoterEchecPose(int erreur)
+    {
+        var sansCrochet = _crochetCourant == 0;
+        if (sansCrochet)
+        {
+            _raison = $"SetWindowsHookEx a échoué (erreur {erreur}).";
+            _actif = false;
+        }
+
+        if (erreur == _dernierCodeEchec) return;
+        _dernierCodeEchec = erreur;
+
+        if (sansCrochet)
+            _journal.Erreur($"Pose du hook impossible (erreur {erreur}) : Win+V reste inactif, nouvel essai plus tard.");
+        else
+            _journal.Avertissement($"Réinstallation du hook impossible (erreur {erreur}) ; l'ancien reste en place.");
     }
 
     private void ArreterReport()
@@ -263,8 +302,17 @@ public sealed class CrochetWinV : ICrochetWinV
     private static bool EstEnfoncee(int touche) => (NatifClavier.GetAsyncKeyState(touche) & 0x8000) != 0;
 
     private static bool ModificateursReelsEnfonces() =>
-        EstEnfoncee(NatifClavier.VK_LWIN) || EstEnfoncee(NatifClavier.VK_RWIN) || EstEnfoncee(NatifClavier.VK_CONTROL)
-        || EstEnfoncee(NatifClavier.VK_MENU) || EstEnfoncee(NatifClavier.VK_SHIFT);
+        EstEnfoncee(NatifClavier.VK_LWIN) || EstEnfoncee(NatifClavier.VK_RWIN) || AutresModificateursEnfonces();
+
+    private static bool AutresModificateursEnfonces() =>
+        EstEnfoncee(NatifClavier.VK_CONTROL) || EstEnfoncee(NatifClavier.VK_MENU) || EstEnfoncee(NatifClavier.VK_SHIFT);
+
+    // Seul Win+V sans autre modificateur est repris : Win+Ctrl+V (raccourci de Windows 11), Win+Maj+V ou Win+Alt+V sont
+    // rendus à Windows. Dire alors « Win pas enfoncée » à l'automate le fait laisser passer la frappe et se remettre à
+    // zéro. Seul l'enfoncement de V est filtré : son relâchement suit la décision prise à l'enfoncement.
+    private static bool WinSeuleEnfoncee(bool enfoncementDeV) =>
+        (EstEnfoncee(NatifClavier.VK_LWIN) || EstEnfoncee(NatifClavier.VK_RWIN))
+        && !(enfoncementDeV && AutresModificateursEnfonces());
 
     // Procédure unique du hook. Elle doit rendre la main très vite et ne jamais laisser filer une exception.
     private static nint Rappel(int code, nint wParam, nint lParam)
@@ -284,9 +332,8 @@ public sealed class CrochetWinV : ICrochetWinV
 
             var injectee = (drapeaux & NatifClavier.LLKHF_INJECTED) != 0;
 
-            // L'état réel de Win n'est utile (et lu) que pour V : les autres touches ne l'interrogent pas.
-            var winReelle = touche == AutomateWinV.VkV && !injectee
-                            && (EstEnfoncee(NatifClavier.VK_LWIN) || EstEnfoncee(NatifClavier.VK_RWIN));
+            // L'état réel des modificateurs n'est utile (et lu) que pour V : les autres touches ne l'interrogent pas.
+            var winReelle = touche == AutomateWinV.VkV && !injectee && WinSeuleEnfoncee(enfoncee);
 
             switch (_automate.Traiter(touche, enfoncee, injectee, winReelle))
             {
@@ -295,7 +342,7 @@ public sealed class CrochetWinV : ICrochetWinV
 
                 case ActionCrochet.AvalerEtOuvrir:
                     // La fenêtre active est relevée ici, dans le rappel, avant que quoi que ce soit ne la change.
-                    NatifClavier.PostThreadMessage(_idFilCrochet, MessageWinV, NatifClavier.GetForegroundWindow(), 0);
+                    NatifClavier.PostThreadMessage(Volatile.Read(ref _idFilCrochet), MessageWinV, NatifClavier.GetForegroundWindow(), 0);
                     return 1;
 
                 case ActionCrochet.MasquerPuisLaisser:
