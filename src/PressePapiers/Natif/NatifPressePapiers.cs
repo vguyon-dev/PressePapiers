@@ -20,6 +20,9 @@ internal static partial class NatifPressePapiers
     /// <summary>Liste de fichiers (CF_HDROP).</summary>
     public const uint CfHDrop = 15;
 
+    /// <summary>Mémoire déplaçable : la seule acceptée par SetClipboardData.</summary>
+    public const uint GmemMoveable = 0x0002;
+
     /// <summary>Ouvre le presse-papiers ; <paramref name="hwndProprietaire"/> à 0 l'associe à la tâche courante.</summary>
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -29,6 +32,17 @@ internal static partial class NatifPressePapiers
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool CloseClipboard();
+
+    /// <summary>Vide le presse-papiers et en donne la propriété à la fenêtre qui l'a ouvert (il doit en avoir une).</summary>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool EmptyClipboard();
+
+    /// <summary>
+    /// Pose un format. Si l'appel réussit, la mémoire appartient désormais au système ; sinon l'appelant la libère.
+    /// </summary>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint SetClipboardData(uint format, nint memoire);
 
     /// <summary>Vrai si un format est présent (le presse-papiers n'a pas besoin d'être ouvert).</summary>
     [LibraryImport("user32.dll")]
@@ -58,6 +72,14 @@ internal static partial class NatifPressePapiers
     /// <summary>Énumère les fenêtres filles directes : passer 0 pour <paramref name="apres"/> la première fois.</summary>
     [LibraryImport("user32.dll", EntryPoint = "FindWindowExW", StringMarshalling = StringMarshalling.Utf16)]
     public static partial nint FindWindowEx(nint parent, nint apres, string? classe, string? titre);
+
+    /// <summary>Alloue un bloc de mémoire globale ; 0 en cas d'échec.</summary>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint GlobalAlloc(uint drapeaux, nuint taille);
+
+    /// <summary>Libère un bloc de mémoire globale ; renvoie 0 en cas de réussite.</summary>
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    public static partial nint GlobalFree(nint memoire);
 
     /// <summary>Verrouille un bloc mémoire globale et renvoie son adresse.</summary>
     [LibraryImport("kernel32.dll", SetLastError = true)]
