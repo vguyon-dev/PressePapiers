@@ -238,14 +238,14 @@ public sealed class DepotElementsTests : IDisposable
     [Fact]
     public void Un_meme_texte_copie_avec_ou_sans_mise_en_forme_reste_un_seul_element()
     {
+        var riche = Depot.AjouterCopie(ContenusDeTest.MisEnForme("Titre"));
+
         var brut = Depot.AjouterCopie(ContenusDeTest.Texte("Titre"));
 
-        var misEnForme = Depot.AjouterCopie(ContenusDeTest.MisEnForme("Titre"));
-
-        // La mise en forme n'entre pas dans l'empreinte : le premier enregistrement est conservé tel quel.
-        Assert.Equal(brut.Id, misEnForme.Id);
-        Assert.Equal(TypeElement.Texte, misEnForme.Type);
-        Assert.Null(misEnForme.Rtf);
+        // La mise en forme n'entre pas dans l'empreinte : le premier enregistrement, qui en a une, est conservé tel quel.
+        Assert.Equal(riche.Id, brut.Id);
+        Assert.Equal(TypeElement.MisEnForme, Depot.Lire(riche.Id)!.Type);
+        Assert.Equal(riche.Rtf, Depot.Lire(riche.Id)!.Rtf);
         Assert.Equal(1, Depot.CompterElements(Temporaire));
     }
 

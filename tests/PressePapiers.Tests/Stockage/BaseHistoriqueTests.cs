@@ -31,7 +31,7 @@ public sealed class BaseHistoriqueTests : IDisposable
             Assert.Contains(attendu, objets);
         }
 
-        Assert.Equal("1", InsertionsSql.Scalaire(baseHistorique.Connexion, "SELECT valeur FROM meta WHERE cle = 'schema.version'"));
+        Assert.Equal("2", InsertionsSql.Scalaire(baseHistorique.Connexion, "SELECT valeur FROM meta WHERE cle = 'schema.version'"));
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public sealed class BaseHistoriqueTests : IDisposable
         using var seconde = BaseHistorique.Ouvrir(chemin);
 
         Assert.Equal("1", InsertionsSql.Scalaire(seconde.Connexion, "SELECT COUNT(*) FROM onglet"));
-        Assert.Equal("1", InsertionsSql.Scalaire(seconde.Connexion, "SELECT valeur FROM meta WHERE cle = 'schema.version'"));
+        Assert.Equal("2", InsertionsSql.Scalaire(seconde.Connexion, "SELECT valeur FROM meta WHERE cle = 'schema.version'"));
     }
 
     [Fact]

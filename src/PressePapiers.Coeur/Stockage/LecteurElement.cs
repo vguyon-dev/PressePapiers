@@ -30,15 +30,13 @@ internal static class LecteurElement
     };
 
     /// <summary>
-    /// Colonnes du résumé, dans l'ordre que lit <see cref="LireResume"/> : début du texte, miniature des images seulement,
-    /// présence de RTF ou de HTML (sans les relire) et nombre de chemins d'une liste de fichiers.
+    /// Colonnes du résumé, dans l'ordre que lit <see cref="LireResume"/> : uniquement des colonnes courtes, rangées avant
+    /// les gros contenus de la table (extrait, indicateur de mise en forme et nombre de chemins sont calculés à l'écriture),
+    /// et la miniature des images seulement.
     /// </summary>
-    public static readonly string ColonnesResume =
-        "id, onglet_id, nom, type, substr(texte, 1, " + ElementResume.LongueurMaxExtrait + "), application, date_copie, date_usage, taille, " +
-        "CASE WHEN type = 3 THEN miniature END, (rtf IS NOT NULL OR html IS NOT NULL), " +
-        // Chemins non vides : retours à la ligne internes + 1 (ceux de fin sont ignorés), comme le découpage de Element.Fichiers.
-        "CASE WHEN type = 4 AND rtrim(texte, char(10)) <> '' " +
-        "THEN length(rtrim(texte, char(10))) - length(replace(rtrim(texte, char(10)), char(10), '')) + 1 ELSE 0 END";
+    public const string ColonnesResume =
+        "id, onglet_id, nom, type, extrait, application, date_copie, date_usage, taille, " +
+        "CASE WHEN type = 3 THEN miniature END, a_mise_en_forme, nombre_fichiers";
 
     /// <summary>Lit la ligne courante du lecteur ; les colonnes suivent l'ordre de <see cref="ColonnesResume"/>.</summary>
     public static ElementResume LireResume(SqliteDataReader lecteur) => new()
