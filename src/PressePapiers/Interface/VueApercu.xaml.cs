@@ -1,0 +1,222 @@
+using System.Globalization;
+using System.Runtime.InteropServices.WindowsRuntime;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media.Imaging;
+using PressePapiers.Coeur.Modele;
+using Windows.Storage.Streams;
+using Windows.System;
+
+namespace PressePapiers.Interface;
+
+/// <summary>
+/// Colonne de droite de la fenêtre : commandes, nom et onglet de rangement, contenu complet de l'élément choisi
+/// (texte, RTF, image, liste de fichiers), application d'origine et date.
+/// </summary>
+public sealed partial class VueApercu : UserControl
+{
+    // Un TextBlock ne digère pas des mégaoctets : au-delà, l'aperçu est tronqué (le collage reste complet).
+    private const int CaracteresAffiches = 100_000;
+
+    private FenetrePrincipaleVue? _vue;
+    private (long Id, string? Nom, long OngletId)? _affiche;
+    private List<OngletVue> _ongletsProposes = [];
+
+    /// <summary>Crée l'aperçu, vide : <see cref="Lier"/> le branche sur le modèle de vue.</summary>
+    public VueApercu()
+    {
+        InitializeComponent();
+        Afficher(null);
+    }
+
+    /// <summary>Branche l'aperçu sur le modèle de vue : il suit l'élément choisi et la liste des onglets.</summary>
+    public void Lier(FenetrePrincipaleVue vue)
+    {
+        _vue = vue;
+        vue.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(FenetrePrincipaleVue.ElementSelectionne))
+            {
+                Afficher(vue.ElementSelectionne);
+            }
+        };
+        vue.Rafraichi += SynchroniserOnglets;
+        SynchroniserOnglets();
+        Afficher(vue.ElementSelectionne);
+    }
+
+    /// <summary>Place le curseur dans le champ Nom (F2 et bouton Nommer).</summary>
+    public void FocaliserNom()
+    {
+        ChampNom.Focus(FocusState.Programmatic);
+        ChampNom.SelectAll();
+    }
+
+    private void Afficher(ElementVue? ligne)
+    {
+        var element = ligne?.Element;
+
+        // Une relecture du dépôt recrée les lignes : si c'est le même élément, rien ne change, et un nom en cours
+        // de saisie n'est pas effacé.
+        (long, string?, long)? cle = element is null ? null : (element.Id, element.Nom, element.OngletId);
+        if (cle is not null && cle == _affiche)
+        {
+            return;
+        }
+
+        _affiche = cle;
+        ApercuTexte.Visibility = Visibility.Collapsed;
+        DefilementTexte.Visibility = Visibility.Collapsed;
+        ApercuRiche.Visibility = Visibility.Collapsed;
+        ZoneImage.Visibility = Visibility.Collapsed;
+        DefilementFichiers.Visibility = Visibility.Collapsed;
+        Mention.Text = string.Empty;
+
+        var present = element is not null;
+        Vide.Visibility = present ? Visibility.Collapsed : Visibility.Visible;
+        foreach (var bouton in new[] { BoutonColler, BoutonAutreMode, BoutonNommer, BoutonSupprimer, BoutonEnregistrer })
+        {
+            bouton.IsEnabled = present;
+        }
+
+        ChampNom.IsEnabled = ChoixOnglet.IsEnabled = present;
+        BoutonAutreMode.Visibility = element?.Type == TypeElement.MisEnForme ? Visibility.Visible : Visibility.Collapsed;
+        BoutonAutreMode.Label = _vue?.LibelleAutreMode ?? "Texte brut";
+        ChampNom.Text = element?.Nom ?? string.Empty;
+        ChoixOnglet.SelectedItem = _ongletsProposes.FirstOrDefault(o => o.Id == element?.OngletId);
+        Meta.Text = element is null ? string.Empty : Description(element);
+
+        if (element is null || ligne is null)
+        {
+            return;
+        }
+
+        switch (element.Type)
+        {
+            case TypeElement.Image:
+                _ = AfficherImageAsync(element);
+                break;
+            case TypeElement.Fichiers:
+                ListeFichiers.ItemsSource = element.Fichiers;
+                DefilementFichiers.Visibility = Visibility.Visible;
+                break;
+            case TypeElement.MisEnForme when element.Rtf is { Length: > 0 } rtf && RenduRtf.Charger(ApercuRiche, rtf, _vue?.Journal):
+                ApercuRiche.Visibility = Visibility.Visible;
+                break;
+            case TypeElement.MisEnForme:
+                // Pas de RTF exploitable (page web en HTML seul, RTF refusé) : texte brut, la mise en forme reste pour le collage.
+                AfficherTexte(element, ligne, "Mise en forme conservée pour le collage.");
+                break;
+            default:
+                AfficherTexte(element, ligne, null);
+                break;
+        }
+    }
+
+    private void AfficherTexte(Element element, ElementVue ligne, string? mention)
+    {
+        var texte = element.Texte ?? string.Empty;
+        if (texte.Length > CaracteresAffiches)
+        {
+            mention = $"Aperçu limité aux {Nombre(CaracteresAffiches)} premiers caractères ({Nombre(texte.Length)} au total) ; "
+                      + "le collage porte sur le texte entier.";
+            texte = texte[..CaracteresAffiches];
+        }
+
+        ApercuTexte.Text = texte;
+        ApercuTexte.FontFamily = ligne.Police;
+        Mention.Text = mention ?? string.Empty;
+        ApercuTexte.Visibility = Visibility.Visible;
+        DefilementTexte.Visibility = Visibility.Visible;
+    }
+
+    // L'image est lue en mémoire : un BitmapImage sur le fichier le garderait ouvert et empêcherait de le supprimer.
+    private async Task AfficherImageAsync(Element element)
+    {
+        var cle = _affiche;
+        ZoneImage.Visibility = Visibility.Visible;
+        ApercuImage.Source = null;
+        ImageAbsente.Visibility = Visibility.Collapsed;
+        try
+        {
+            var octets = await File.ReadAllBytesAsync(_vue!.CheminImage(element));
+            using var flux = new InMemoryRandomAccessStream();
+            await flux.WriteAsync(octets.AsBuffer());
+            flux.Seek(0);
+            var image = new BitmapImage { DecodePixelWidth = 1000 };
+            await image.SetSourceAsync(flux);
+            if (cle == _affiche)
+            {
+                ApercuImage.Source = image;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException
+                                                       or System.Runtime.InteropServices.COMException)
+        {
+            if (cle == _affiche)
+            {
+                ImageAbsente.Text = "L'image est introuvable ou illisible sur le disque.";
+                ImageAbsente.Visibility = Visibility.Visible;
+            }
+        }
+    }
+
+    // Nombre à la française, groupes de chiffres séparés par une espace insécable.
+    private static string Nombre(int valeur) =>
+        valeur.ToString("N0", CultureInfo.GetCultureInfo("fr-FR")).Replace('\u202F', '\u00A0');
+
+    private string Description(Element element)
+    {
+        var origine = string.IsNullOrWhiteSpace(element.Application) ? "une application inconnue" : element.Application;
+        var taille = element.Type switch
+        {
+            TypeElement.Image => ResumeElement.Taille(element.Taille),
+            TypeElement.Fichiers => $"{element.Fichiers.Count} fichier(s)",
+            _ => Nombre(element.Texte?.Length ?? 0) + " caractères",
+        };
+        return $"Copié depuis {origine}, {ResumeElement.Heure(element.DateCopie, _vue?.Horloge ?? TimeProvider.System)} · {taille}";
+    }
+
+    // Les onglets proposés sont ceux de l'utilisateur : un élément nommé ne reste pas dans Temporaire.
+    private void SynchroniserOnglets()
+    {
+        if (_vue is null)
+        {
+            return;
+        }
+
+        BoutonAutreMode.Label = _vue.LibelleAutreMode;
+        var utilisateur = _vue.Onglets.Where(o => !o.EstTemporaire).ToList();
+        if (utilisateur.Select(o => (o.Id, o.Nom)).SequenceEqual(_ongletsProposes.Select(o => (o.Id, o.Nom))))
+        {
+            return;
+        }
+
+        var choisi = (ChoixOnglet.SelectedItem as OngletVue)?.Id;
+        _ongletsProposes = utilisateur;
+        ChoixOnglet.ItemsSource = utilisateur;
+        ChoixOnglet.SelectedItem = utilisateur.FirstOrDefault(o => o.Id == choisi);
+    }
+
+    private void Coller_Click(object sender, RoutedEventArgs e) => _vue?.DemanderCollage(autreMode: false, copieSeule: false);
+
+    private void AutreMode_Click(object sender, RoutedEventArgs e) => _vue?.DemanderCollage(autreMode: true, copieSeule: false);
+
+    private void Nommer_Click(object sender, RoutedEventArgs e) => FocaliserNom();
+
+    private void Supprimer_Click(object sender, RoutedEventArgs e) => _ = _vue?.SupprimerSelectionAsync();
+
+    private void Enregistrer_Click(object sender, RoutedEventArgs e) => Enregistrer();
+
+    private void ChampNom_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Enter)
+        {
+            e.Handled = true;
+            Enregistrer();
+        }
+    }
+
+    private void Enregistrer() => _vue?.Enregistrer(ChampNom.Text, (ChoixOnglet.SelectedItem as OngletVue)?.Id);
+}

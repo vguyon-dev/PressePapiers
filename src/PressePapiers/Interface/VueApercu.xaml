@@ -1,0 +1,95 @@
+<UserControl
+    x:Class="PressePapiers.Interface.VueApercu"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:PressePapiers.Interface">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Coller, autre mode de mise en forme, Nommer, Supprimer. -->
+        <CommandBar x:Name="Commandes" Grid.Row="0" DefaultLabelPosition="Right" Background="Transparent"
+                    HorizontalAlignment="Left" IsOpen="False">
+            <AppBarButton x:Name="BoutonColler" Label="Coller" Click="Coller_Click">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE77F;" FontFamily="Segoe Fluent Icons" /></AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton x:Name="BoutonAutreMode" Label="Texte brut" Click="AutreMode_Click">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE8D2;" FontFamily="Segoe Fluent Icons" /></AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton x:Name="BoutonNommer" Label="Nommer" LabelPosition="Collapsed"
+                          ToolTipService.ToolTip="Nommer (F2)" Click="Nommer_Click">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE70F;" FontFamily="Segoe Fluent Icons" /></AppBarButton.Icon>
+            </AppBarButton>
+            <AppBarButton x:Name="BoutonSupprimer" Label="Supprimer" LabelPosition="Collapsed"
+                          ToolTipService.ToolTip="Supprimer (Suppr)" Click="Supprimer_Click">
+                <AppBarButton.Icon><FontIcon Glyph="&#xE74D;" FontFamily="Segoe Fluent Icons" /></AppBarButton.Icon>
+            </AppBarButton>
+        </CommandBar>
+
+        <!-- Nom et onglet de rangement. -->
+        <StackPanel x:Name="ZoneChamps" Grid.Row="1" Spacing="8" Margin="16,4,16,0">
+            <TextBox x:Name="ChampNom" Header="Nom" PlaceholderText="Sans nom : reste dans Temporaire" MaxLength="120"
+                     KeyDown="ChampNom_KeyDown" />
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <ComboBox x:Name="ChoixOnglet" Grid.Column="0" Header="Onglet" PlaceholderText="Choisir un onglet"
+                          HorizontalAlignment="Stretch" DisplayMemberPath="Nom" />
+                <Button x:Name="BoutonEnregistrer" Grid.Column="1" Content="Enregistrer"
+                        Style="{StaticResource AccentButtonStyle}" VerticalAlignment="Bottom" Click="Enregistrer_Click" />
+            </Grid>
+        </StackPanel>
+
+        <!-- Contenu complet : un seul des blocs est visible à la fois. -->
+        <Grid Grid.Row="2" Margin="0,12,0,0">
+            <ScrollViewer x:Name="DefilementTexte" Padding="16,0,16,0">
+                <StackPanel Spacing="8">
+                    <TextBlock x:Name="ApercuTexte" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="Mention" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+            </ScrollViewer>
+            <RichEditBox x:Name="ApercuRiche" IsReadOnly="True" Visibility="Collapsed" Background="Transparent"
+                         BorderThickness="0" Padding="16,0,16,0" IsSpellCheckEnabled="False" TextWrapping="Wrap"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         AutomationProperties.Name="Aperçu avec mise en forme" />
+            <Grid x:Name="ZoneImage" Margin="16,0,16,0" Visibility="Collapsed">
+                <Image x:Name="ApercuImage" Stretch="Uniform" HorizontalAlignment="Left" VerticalAlignment="Top" />
+                <TextBlock x:Name="ImageAbsente" TextWrapping="Wrap" Visibility="Collapsed"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Grid>
+            <ScrollViewer x:Name="DefilementFichiers" Padding="16,0,16,0" Visibility="Collapsed">
+                <ItemsControl x:Name="ListeFichiers">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Grid ColumnSpacing="8" Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE8A5;" FontFamily="Segoe Fluent Icons" FontSize="14"
+                                          VerticalAlignment="Top" Margin="0,3,0,0"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="1" Text="{x:Bind}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <TextBlock x:Name="Vide" Text="Aucun élément sélectionné." Margin="16,0,16,0"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </Grid>
+
+        <!-- Application d'origine, date de copie, taille. -->
+        <TextBlock x:Name="Meta" Grid.Row="3" Margin="16,8,16,14" TextWrapping="Wrap"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+    </Grid>
+</UserControl>

@@ -48,7 +48,7 @@ public sealed partial class FenetrePrincipale
         Navigation.MenuItems.Clear();
         foreach (var onglet in onglets)
         {
-            Navigation.MenuItems.Add(new NavigationViewItem
+            var entree = new NavigationViewItem
             {
                 Content = onglet.Nom,
                 Tag = onglet,
@@ -58,7 +58,13 @@ public sealed partial class FenetrePrincipale
                     Value = onglet.Compteur,
                     Style = (Style)Application.Current.Resources["InformationalValueInfoBadgeStyle"],
                 },
-            });
+            };
+            if (!onglet.EstTemporaire)
+            {
+                entree.ContextFlyout = CreerMenuOnglet(entree);
+            }
+
+            Navigation.MenuItems.Add(entree);
         }
 
         Navigation.MenuItems.Add(new NavigationViewItemSeparator());
@@ -83,8 +89,33 @@ public sealed partial class FenetrePrincipale
         }
     }
 
-    // « Nouvel onglet » ne change pas la sélection : la boîte de saisie vient avec la tâche 26.
+    // « Nouvel onglet » ne change pas la sélection : il ouvre la boîte de saisie du nom.
     private void Navigation_ItemInvoked(NavigationView sender, NavigationViewItemInvokedEventArgs args)
     {
+        if (args.InvokedItemContainer?.Tag is "nouvel-onglet")
+        {
+            _ = Vue.NouvelOngletAsync();
+        }
+    }
+
+    // Clic droit sur un onglet de l'utilisateur : renommer, supprimer, changer de place. Temporaire n'a pas de menu.
+    private MenuFlyout CreerMenuOnglet(NavigationViewItem entree)
+    {
+        OngletVue Onglet() => (OngletVue)entree.Tag;
+        var menu = new MenuFlyout();
+        var renommer = new MenuFlyoutItem { Text = "Renommer" };
+        renommer.Click += (_, _) => _ = Vue.RenommerOngletAsync(Onglet());
+        var supprimer = new MenuFlyoutItem { Text = "Supprimer" };
+        supprimer.Click += (_, _) => _ = Vue.SupprimerOngletAsync(Onglet());
+        var monter = new MenuFlyoutItem { Text = "Monter" };
+        monter.Click += (_, _) => Vue.DeplacerOnglet(Onglet(), -1);
+        var descendre = new MenuFlyoutItem { Text = "Descendre" };
+        descendre.Click += (_, _) => Vue.DeplacerOnglet(Onglet(), 1);
+        menu.Items.Add(renommer);
+        menu.Items.Add(supprimer);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(monter);
+        menu.Items.Add(descendre);
+        return menu;
     }
 }

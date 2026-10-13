@@ -40,6 +40,9 @@ public sealed partial class FenetrePrincipale : Window
         _minuteurTaille.Tick += (_, _) => MemoriserTaille();
         AppWindow.Changed += AppWindow_Changed;
 
+
+        PanneauApercu.Lier(Vue);
+        Vue.Dialogues = new GestionnaireDialogues(() => Content as FrameworkElement, () => EstVisible);
         Vue.Rafraichi += SynchroniserVolet;
         SynchroniserVolet();
 
