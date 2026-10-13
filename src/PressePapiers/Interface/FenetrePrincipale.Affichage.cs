@@ -59,6 +59,19 @@ public sealed partial class FenetrePrincipale
         barre.ButtonPressedBackgroundColor = personnalise ? appui : null;
     }
 
+    // Fenêtre de taille réglable mais ni agrandissable ni réductible, et absente d'Alt+Tab : c'est un outil de passage,
+    // qui disparaît dès qu'il perd le focus.
+    private void AppliquerPresentation()
+    {
+        if (AppWindow.Presenter is OverlappedPresenter presentateur)
+        {
+            presentateur.IsMaximizable = false;
+            presentateur.IsMinimizable = false;
+        }
+
+        AppWindow.IsShownInSwitchers = false;
+    }
+
     // Taille mémorisée en pixels logiques : la même largeur de 920 doit donner la même fenêtre à 100 % et à 150 %.
     private double EchelleAffichage => Content?.XamlRoot?.RasterizationScale ?? 1.0;
 

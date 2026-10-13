@@ -91,7 +91,7 @@ public sealed partial class FenetrePrincipale
         switch (args.InvokedItemContainer?.Tag)
         {
             case "nouvel-onglet":
-                _ = Vue.NouvelOngletAsync();
+                ExecutionProtegee.Lancer(Vue.Journal, Vue.NouvelOngletAsync, "la création d'un onglet");
                 break;
             case OngletVue onglet:
                 _parametresVoulus = false;
@@ -107,9 +107,11 @@ public sealed partial class FenetrePrincipale
         OngletVue Onglet() => (OngletVue)entree.Tag;
         var menu = new MenuFlyout();
         var renommer = new MenuFlyoutItem { Text = "Renommer" };
-        renommer.Click += (_, _) => _ = Vue.RenommerOngletAsync(Onglet());
+        renommer.Click += (_, _) =>
+            ExecutionProtegee.Lancer(Vue.Journal, () => Vue.RenommerOngletAsync(Onglet()), "le renommage d'un onglet");
         var supprimer = new MenuFlyoutItem { Text = "Supprimer" };
-        supprimer.Click += (_, _) => _ = Vue.SupprimerOngletAsync(Onglet());
+        supprimer.Click += (_, _) =>
+            ExecutionProtegee.Lancer(Vue.Journal, () => Vue.SupprimerOngletAsync(Onglet()), "la suppression d'un onglet");
         var monter = new MenuFlyoutItem { Text = "Monter" };
         monter.Click += (_, _) => Vue.DeplacerOnglet(Onglet(), -1);
         var descendre = new MenuFlyoutItem { Text = "Descendre" };

@@ -98,7 +98,7 @@ public sealed partial class App : Application
     /// <param name="action">Travail à faire sur le fil d'interface.</param>
     /// <param name="contexte">Ce que l'action fait, pour le message du journal (« la relance »).</param>
     internal void PosterSurInterface(Action action, string contexte) =>
-        _fil.TryEnqueue(() => ExecuterProtege(action, contexte));
+        ExecutionProtegee.Poster(_fil, _journal, action, contexte);
 
     /// <inheritdoc />
     protected override void OnLaunched(LaunchActivatedEventArgs args)
@@ -232,17 +232,7 @@ public sealed partial class App : Application
     }
 
     // Note l'exception au journal au lieu de la laisser sortir du rappel (qui arrêterait le processus sans trace).
-    private void ExecuterProtege(Action action, string contexte)
-    {
-        try
-        {
-            action();
-        }
-        catch (Exception exception)
-        {
-            _journal.Erreur($"Exception pendant {contexte}.", exception);
-        }
-    }
+    private void ExecuterProtege(Action action, string contexte) => ExecutionProtegee.Executer(_journal, action, contexte);
 
     // Recette automatique (versions Debug seulement) : PRESSEPAPIERS_ARRET_APRES_MS demande un arrêt propre, par le chemin
     // Quitter, au bout de ce délai : un moyen de vérifier l'arrêt sans tuer le processus ni cliquer sur l'icône.
