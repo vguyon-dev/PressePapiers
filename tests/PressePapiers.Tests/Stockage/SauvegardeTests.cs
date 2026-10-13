@@ -235,6 +235,42 @@ public sealed class SauvegardeTests : IDisposable
         Assert.Equal(3, Directory.GetFiles(Sauvegardes).Length);
     }
 
+    [Fact]
+    public void Une_copie_qui_echoue_au_controle_d_integrite_est_jetee_et_les_anciennes_sont_gardees()
+    {
+        var journal = new JournalCollecte();
+        CreerBase(40, texteLong: true).Dispose();
+        for (var i = 0; i < 3; i++)
+        {
+            Sauvegarde.Creer(CheminBase, Sauvegardes, _horloge);
+            _horloge.Advance(TimeSpan.FromSeconds(10));
+        }
+
+        var saines = NomsSauvegardes();
+        AbimerUnePageDeDonnees();
+
+        var resultat = Sauvegarde.Creer(CheminBase, Sauvegardes, _horloge, journal: journal);
+
+        // Rien de nouveau, rien de supprimé par la rotation (sans le contrôle, la plus ancienne des trois serait partie).
+        Assert.Null(resultat);
+        Assert.Equal(saines, NomsSauvegardes());
+        Assert.Equal(3, Directory.GetFiles(Sauvegardes).Length);
+        var avertissement = Assert.Single(journal.Avertissements);
+        Assert.Contains("contrôle d'intégrité", avertissement);
+    }
+
+    [Fact]
+    public void Une_copie_saine_passe_le_controle_sans_avertissement()
+    {
+        var journal = new JournalCollecte();
+        CreerBase(5).Dispose();
+
+        var copie = Sauvegarde.Creer(CheminBase, Sauvegardes, _horloge, journal: journal);
+
+        Assert.NotNull(copie);
+        Assert.Empty(journal.Avertissements);
+    }
+
     // ---- PlusRecente ----
 
     [Fact]
@@ -284,6 +320,76 @@ public sealed class SauvegardeTests : IDisposable
         Assert.False(File.Exists(CheminBase + ".restauration"));
         using var restauree = BaseHistorique.Ouvrir(CheminBase);
         Assert.Equal("3", InsertionsSql.Scalaire(restauree.Connexion, "SELECT COUNT(*) FROM element"));
+    }
+
+    [Fact]
+    public void Restaurer_ne_laisse_aucun_fichier_renomme_a_cote_de_la_base()
+    {
+        string copie;
+        using (var origine = CreerBase(1))
+        {
+            copie = Sauvegarde.Creer(CheminBase, Sauvegardes, _horloge)!;
+        }
+
+        File.WriteAllText(CheminBase + "-wal", "wal");
+        File.WriteAllText(CheminBase + "-shm", "shm");
+
+        Sauvegarde.Restaurer(copie, CheminBase);
+
+        Assert.Equal(["historique.db"], Directory.GetFiles(_racine.Chemin).Select(f => Path.GetFileName(f)));
+    }
+
+    [Fact]
+    public void Un_echec_de_mise_en_place_remet_le_wal_et_le_shm_de_la_base_actuelle()
+    {
+        string copie;
+        using (var origine = CreerBase(1))
+        {
+            copie = Sauvegarde.Creer(CheminBase, Sauvegardes, _horloge)!;
+        }
+
+        File.WriteAllText(CheminBase, "base actuelle");
+        File.WriteAllText(CheminBase + "-wal", "journal de la base actuelle");
+        File.WriteAllText(CheminBase + "-shm", "memoire de la base actuelle");
+
+        // Un fichier verrouillé empêche de le remplacer, après que le wal et le shm ont déjà été écartés.
+        using (new FileStream(CheminBase, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var exception = Record.Exception(() => Sauvegarde.Restaurer(copie, CheminBase));
+            Assert.True(exception is IOException or UnauthorizedAccessException, $"exception inattendue : {exception}");
+        }
+
+        Assert.Equal("base actuelle", File.ReadAllText(CheminBase));
+        Assert.Equal("journal de la base actuelle", File.ReadAllText(CheminBase + "-wal"));
+        Assert.Equal("memoire de la base actuelle", File.ReadAllText(CheminBase + "-shm"));
+        Assert.Equal(["historique.db", "historique.db-shm", "historique.db-wal"],
+                     Directory.GetFiles(_racine.Chemin).Select(f => Path.GetFileName(f)).Order());
+    }
+
+    [Fact]
+    public void Un_wal_impossible_a_ecarter_arrete_la_restauration_avant_de_toucher_a_la_base()
+    {
+        string copie;
+        using (var origine = CreerBase(1))
+        {
+            copie = Sauvegarde.Creer(CheminBase, Sauvegardes, _horloge)!;
+        }
+
+        File.WriteAllText(CheminBase, "base actuelle");
+        File.WriteAllText(CheminBase + "-wal", "journal");
+        File.WriteAllText(CheminBase + "-shm", "memoire");
+
+        // Le wal est tenu ouvert (comme par une base encore ouverte) : le renommer échoue, la base reste telle quelle.
+        using (new FileStream(CheminBase + "-wal", FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            var exception = Record.Exception(() => Sauvegarde.Restaurer(copie, CheminBase));
+            Assert.True(exception is IOException or UnauthorizedAccessException, $"exception inattendue : {exception}");
+        }
+
+        Assert.Equal("base actuelle", File.ReadAllText(CheminBase));
+        Assert.Equal("journal", File.ReadAllText(CheminBase + "-wal"));
+        Assert.Equal("memoire", File.ReadAllText(CheminBase + "-shm"));
+        Assert.False(File.Exists(CheminBase + ".restauration"));
     }
 
     [Fact]
@@ -355,17 +461,41 @@ public sealed class SauvegardeTests : IDisposable
     // ---- Assistants ----
 
     // Base de l'historique au chemin habituel, avec n textes ; laissée ouverte pour que ses écritures restent dans le wal.
-    private BaseHistorique CreerBase(int elements)
+    // Des textes longs étalent la base sur plusieurs pages, pour qu'on puisse en abîmer une sans toucher au schéma.
+    private BaseHistorique CreerBase(int elements, bool texteLong = false)
     {
         var dossiers = new DossierDonnees(_racine.Chemin);
         var baseHistorique = BaseHistorique.Ouvrir(CheminBase);
         var depot = new DepotHistorique(baseHistorique, dossiers, _horloge, JournalNul.Instance);
         for (var i = 0; i < elements; i++)
         {
-            depot.AjouterCopie(ContenusDeTest.Texte("element " + i));
+            depot.AjouterCopie(ContenusDeTest.Texte("element " + i + (texteLong ? new string('x', 3000) : "")));
         }
 
         return baseHistorique;
+    }
+
+    // Écrase l'en-tête de plusieurs pages du milieu du fichier (base fermée) : SQLite l'ouvre encore, mais le contrôle
+    // d'intégrité échoue. Le test vérifie lui-même que la base est bien abîmée avant d'en tirer une conclusion.
+    private void AbimerUnePageDeDonnees()
+    {
+        const int taillePage = 4096;
+        var octets = File.ReadAllBytes(CheminBase);
+        var pages = octets.Length / taillePage;
+        Assert.True(pages >= 12, $"base trop petite pour le test : {pages} pages");
+        for (var page = pages / 2; page < pages / 2 + 4; page++)
+        {
+            Array.Fill(octets, (byte)0xFF, page * taillePage, 64);
+        }
+
+        File.WriteAllBytes(CheminBase, octets);
+
+        var chaine = new SqliteConnectionStringBuilder { DataSource = CheminBase, Pooling = false }.ToString();
+        using var connexion = new SqliteConnection(chaine);
+        connexion.Open();
+        using var commande = connexion.CreateCommand();
+        commande.CommandText = "PRAGMA quick_check";
+        Assert.NotEqual("ok", Convert.ToString(commande.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture));
     }
 
     // Octets du fichier de la base alors qu'une connexion l'a ouvert : File.ReadAllBytes refuserait de le lire.

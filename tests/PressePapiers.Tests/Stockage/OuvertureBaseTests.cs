@@ -126,6 +126,61 @@ public sealed class OuvertureBaseTests : IDisposable
     }
 
     [Fact]
+    public void Le_refus_de_l_utilisateur_lui_dit_quoi_faire_avant_l_arret()
+    {
+        CreerCopie(elements: 3, quand: Maintenant.AddHours(-1));
+        File.WriteAllText(_dossiers.Base, Abime);
+        _dialogue.Reponse = false;
+
+        Assert.Null(Ouvrir());
+
+        var message = Assert.Single(_dialogue.Informations);
+        Assert.Contains(_dossiers.Base, message);
+        Assert.Contains("déplacez", message);
+        Assert.Contains("acceptez la restauration", message);
+        Assert.Contains(_dossiers.Sauvegardes, message);
+    }
+
+    [Fact]
+    public void La_restauration_garde_aussi_le_wal_et_le_shm_de_la_base_abimee()
+    {
+        CreerCopie(elements: 2, quand: Maintenant.AddHours(-1));
+        File.WriteAllText(_dossiers.Base, Abime);
+        File.WriteAllText(_dossiers.Base + "-wal", "journal de la base abimee");
+        File.WriteAllText(_dossiers.Base + "-shm", "memoire de la base abimee");
+        _dialogue.Reponse = true;
+
+        using var ouverte = Ouvrir();
+
+        Assert.NotNull(ouverte);
+        var ecartee = Path.Combine(_dossiers.Sauvegardes, "illisible-20261013-081530.db");
+        Assert.Equal(Abime, File.ReadAllText(ecartee));
+        Assert.Equal("journal de la base abimee", File.ReadAllText(ecartee + "-wal"));
+        // SQLite réécrit la mémoire partagée en tentant d'ouvrir la base : on vérifie sa présence, pas son contenu.
+        Assert.True(File.Exists(ecartee + "-shm"));
+        // La base restaurée ne reçoit pas le journal de l'ancienne.
+        Assert.Equal("2", InsertionsSql.Scalaire(ouverte.Connexion, "SELECT COUNT(*) FROM element"));
+    }
+
+    [Fact]
+    public void Une_base_creee_par_une_version_plus_recente_arrete_le_demarrage_sans_restauration()
+    {
+        PreparerBase(1);
+        using (var baseHistorique = BaseHistorique.Ouvrir(_dossiers.Base))
+        {
+            using var commande = baseHistorique.Connexion.CreateCommand();
+            commande.CommandText = "UPDATE meta SET valeur = '9' WHERE cle = 'schema.version'";
+            commande.ExecuteNonQuery();
+        }
+
+        var ouverte = Ouvrir();
+
+        Assert.Null(ouverte);
+        Assert.Empty(_dialogue.Questions);
+        Assert.Contains("plus récente", Assert.Single(_dialogue.Informations));
+    }
+
+    [Fact]
     public void Une_copie_elle_meme_abimee_arrete_le_demarrage_en_le_disant()
     {
         File.WriteAllText(Path.Combine(_dossiers.Sauvegardes, "historique-20261013-071530.db"), Abime);

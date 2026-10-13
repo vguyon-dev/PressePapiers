@@ -41,7 +41,7 @@ public static class OuvertureBase
         var abimee = false;
         try
         {
-            Sauvegarde.Creer(dossiers.Base, dossiers.Sauvegardes, horloge);
+            Sauvegarde.Creer(dossiers.Base, dossiers.Sauvegardes, horloge, journal: journal);
         }
         catch (SqliteException exception) when (EstBaseAbimee(exception))
         {
@@ -107,15 +107,35 @@ public static class OuvertureBase
         if (!accepte)
         {
             journal.Info("Restauration refusée par l'utilisateur : l'application ne démarre pas.");
+            dialogue.Informer(
+                $"La restauration a été refusée : PressePapiers ne démarre pas et rien n'a été modifié.{Environment.NewLine}{Environment.NewLine}"
+                + $"Fichier abîmé : {dossiers.Base}{Environment.NewLine}"
+                + "Pour repartir d'un historique vide, déplacez ce fichier puis relancez PressePapiers. "
+                + $"Pour restaurer la copie de sécurité, relancez PressePapiers et acceptez la restauration.{Environment.NewLine}"
+                + $"Les copies de sécurité sont dans : {dossiers.Sauvegardes}");
             return null;
         }
 
         try
         {
-            // Le fichier abîmé est copié à côté avant d'être remplacé : rien n'est perdu sans retour possible.
+            // Le fichier abîmé est copié à côté avant d'être remplacé, avec son journal -wal et sa mémoire partagée -shm
+            // s'il y en a : rien n'est perdu sans retour possible.
             var ecartee = Path.Combine(dossiers.Sauvegardes,
                 $"illisible-{horloge.GetUtcNow().ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}.db");
             File.Copy(dossiers.Base, ecartee, overwrite: true);
+            // Un -wal vide ne porte aucune écriture (ouvrir un fichier qui n'est pas une base en laisse un) : son -shm,
+            // simple index du -wal, n'a alors rien à garder non plus.
+            var wal = new FileInfo(dossiers.Base + "-wal");
+            if (wal.Exists && wal.Length > 0)
+            {
+                foreach (var suffixe in new[] { "-wal", "-shm" })
+                {
+                    if (File.Exists(dossiers.Base + suffixe))
+                    {
+                        File.Copy(dossiers.Base + suffixe, ecartee + suffixe, overwrite: true);
+                    }
+                }
+            }
 
             Sauvegarde.Restaurer(copie, dossiers.Base);
             var restauree = ouvrir(dossiers.Base);
