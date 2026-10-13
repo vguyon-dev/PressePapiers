@@ -168,10 +168,11 @@ Comportements à connaître :
 - [ ] Win seul, Win+E et Win+Maj+S fonctionnent toujours.
 - [ ] Win+V en gardant Win enfoncée après V : une seule ouverture, fenêtre au premier plan.
 - [ ] Win+V tenu (répétition automatique) et double Win+V rapide : une seule ouverture.
+- [ ] Win+V tenu une demi-seconde, puis Win lâchée avant V : aucun « v » n'est écrit dans la recherche.
 - [ ] Raccourci de secours (Ctrl+Alt+Maj+V) depuis une application ordinaire : même ouverture.
 - [ ] Changer le raccourci de secours dans les Paramètres, puis essayer une combinaison déjà prise par une autre application : message sous le champ, l'ancien raccourci reste actif.
 - [ ] Collage spécial d'Excel (Ctrl+Alt+V) toujours disponible pendant que l'outil tourne.
-- [ ] Win+Ctrl+V (sélecteur de sortie audio de Windows) n'est pas intercepté : Windows réagit comme sans l'outil.
+- [ ] Win+Ctrl+V (sélecteur de sortie audio de Windows) n'est pas intercepté : Windows réagit comme sans l'outil. Ctrl lâchée, Win toujours tenue, un V ouvre la fenêtre.
 - [ ] Win+V pendant qu'une boîte de dialogue de l'outil est ouverte (Nouvel onglet, confirmation) et que la fenêtre est passée derrière une autre application : la fenêtre revient au premier plan, boîte comprise.
 
 ### Fenêtre administrateur
