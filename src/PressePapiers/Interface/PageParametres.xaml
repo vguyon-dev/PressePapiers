@@ -22,7 +22,7 @@
             <StackPanel Spacing="6">
                 <TextBlock Text="Raccourci de secours" Style="{StaticResource TitreReglage}" />
                 <TextBlock Style="{StaticResource DescriptionReglage}"
-                           Text="Toujours actif, en plus de Win+V : utile devant une fenêtre administrateur, où Win+V n'est pas intercepté." />
+                           Text="Toujours actif, en plus de Win+V : utile devant une fenêtre administrateur, où Win+V n'est pas intercepté. Sur un clavier AZERTY, Ctrl+Alt+lettre est aussi AltGr+lettre (€, @, #...) : cette lettre ne s'écrirait plus ; préfère une combinaison avec Maj ou une touche de fonction." />
                 <Grid ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -56,9 +56,9 @@
             <StackPanel Spacing="6">
                 <NumberBox x:Name="ChampPlafond" Header="Plafond d'éléments dans Temporaire" Minimum="0" Maximum="1000000"
                            SmallChange="100" LargeChange="1000" SpinButtonPlacementMode="Compact" MinWidth="240"
-                           HorizontalAlignment="Left" ValueChanged="Plafond_ValueChanged" />
+                           HorizontalAlignment="Left" ValueChanged="Plafond_ValueChanged" LostFocus="Plafond_LostFocus" />
                 <TextBlock Style="{StaticResource DescriptionReglage}"
-                           Text="Au-delà, les plus anciens éléments sont supprimés. 0 désactive le plafond." />
+                           Text="Au-delà, les plus anciens éléments sont supprimés ; abaisser le plafond demande une confirmation quand des éléments seraient supprimés. 0 désactive le plafond." />
             </StackPanel>
 
             <!-- Thème -->
@@ -72,7 +72,7 @@
             <StackPanel Spacing="6">
                 <TextBox x:Name="ChampChasseFixe" Header="Applications affichées en police à chasse fixe"
                          AcceptsReturn="True" TextWrapping="Wrap" MinHeight="96" MaxHeight="160"
-                         LostFocus="ChasseFixe_LostFocus" />
+                         TextChanged="ChasseFixe_TextChanged" LostFocus="ChasseFixe_LostFocus" />
                 <TextBlock Style="{StaticResource DescriptionReglage}"
                            Text="Un nom de processus par ligne (sans .exe), par exemple WindowsTerminal ou Code." />
             </StackPanel>
