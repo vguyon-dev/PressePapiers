@@ -23,6 +23,15 @@
 > - **`AllowUnsafeBlocks`** posé dans le projet de l'application à la tâche 16 (exigé par `LibraryImport`).
 > - **Réinstallation périodique du hook** : faite par `CrochetWinV` sur son propre fil (toutes les 15 minutes) ; `App`
 >   relit seulement l'état du hook chaque minute et relance un hook inactif.
+>
+> **Statut au 13/10/2026, après la revue de code** (`revue.md`). Ajouts publics : `Coeur.Modele.ElementResume`
+> (`LongueurMaxExtrait` = 500), `DepotHistorique.ListerResumes(long)`, `DepotHistorique.NettoyerImagesOrphelines()`,
+> `MoteurRecherche.ChercherResumes(string, int = 500)`, paramètre optionnel `IJournal? journal` de `Sauvegarde.Creer`,
+> `DialoguesWindows.Signaler(string)`, `LecteurPressePapiers.RelectureDemandee`. Nouveaux fichiers :
+> `Coeur/Stockage/FichiersImages.cs`, `ExtraitTexte.cs`, `MigrationSchema.cs` ; `Natif/NatifProcessus.cs` ;
+> `Interface/ExecutionProtegee.cs`, `Interface/GestionDemarrage.cs` (internes). Comportements : schéma en version 2 ; `Raccourci.TryAnalyser`
+> exige deux modificateurs ; `AjouterCopie` renvoie un élément partiel pour un doublon (`Lire` donne l'élément complet) ;
+> `EcrireMeta` ne lève plus `Modifie`.
 
 Annexe du plan `docs/superpowers/plans/2026-10-13-pressepapiers.md`, tirée de la spec
 `docs/superpowers/specs/2026-10-13-pressepapiers-design.md`. Chaque tâche du plan respecte ces noms, ces signatures et cette

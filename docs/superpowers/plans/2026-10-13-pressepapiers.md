@@ -22,6 +22,13 @@ xunit.runner.visualstudio 4.0.0, Microsoft.NET.Test.Sdk 18.10.1, Microsoft.Exten
 **Contrat (noms, signatures, répartition des fichiers) :** [`2026-10-13-pressepapiers/contrat.md`](2026-10-13-pressepapiers/contrat.md)
 **Journal de construction du plan :** [`2026-10-13-pressepapiers/integration.md`](2026-10-13-pressepapiers/integration.md)
 
+> **Statut au 13/10/2026, après l'exécution.** Le plan a été exécuté en reprenant ses 29 commits validés, puis relu par
+> cinq relecteurs indépendants (un par phase) : aucun défaut critique, des corrections importantes faites et fusionnées
+> ensuite (lecture de résumés et schéma en version 2, images hostiles, sauvegardes, lecture en retard du presse-papiers,
+> collages jamais muets, ouverture fiable, plafond confirmé, Win+V seul, garde-fous de `publier.ps1`). Le texte des tâches
+> ci-dessous décrit l'état **avant** la revue ; le code de `main` fait foi. Détail des constats, des corrections et de ce qui
+> est en réserve : [`2026-10-13-pressepapiers/revue.md`](2026-10-13-pressepapiers/revue.md).
+
 ## Comment ce plan a été construit
 
 Le 13/10/2026, chaque tâche a été codée, compilée et testée sur le poste avant d'être rédigée : socle, puis deux vagues

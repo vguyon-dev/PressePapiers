@@ -26,6 +26,30 @@
 >   confirmés ; points 1, 3, 4 et 7 partiellement confirmés ; points 5 et 6 non testés. État détaillé : plan, section
 >   « État des points à valider ».
 
+> **Statut au 13/10/2026, après la revue de code** (`docs/superpowers/plans/2026-10-13-pressepapiers/revue.md`). Les
+> corrections précisent encore la conception :
+>
+> - **Section 4** : la lecture rend le texte tout de suite ; au-delà de 2 s, ce texte sert de résultat partiel, aucune
+>   nouvelle lecture ne part tant que la lecture en retard tient le presse-papiers, et son résultat est livré par une
+>   relecture quand elle finit. L'ordre de décision du type est : `CF_HDROP` (fichiers), puis texte (mis en forme si RTF ou
+>   HTML), puis image. Un DIB est refusé au-delà de 64 Mpx, en compression JPEG ou PNG, ou s'il est incohérent.
+> - **Section 5** : schéma en version 2 (petites colonnes d'abord ; colonnes calculées `extrait` de 500 caractères,
+>   `a_mise_en_forme`, `nombre_fichiers` ; gros contenus en dernier), migré automatiquement depuis la version 1 ; une base
+>   d'une version supérieure est refusée. La liste et la recherche lisent des résumés. Les PNG orphelins sont supprimés au
+>   démarrage. Une copie de sécurité n'est gardée qu'après `PRAGMA quick_check`. La restauration garde le `-wal` de la base
+>   abîmée. Une recopie avec mise en forme enrichit l'élément existant.
+> - **Section 8** : changer le plafond demande confirmation avant toute suppression ; la fenêtre n'est ni agrandissable ni
+>   réductible et n'apparaît pas dans Alt+Tab ; les messages de réussite se ferment après 5 s ; le raccourci de secours exige
+>   au moins deux modificateurs parmi Ctrl, Alt et Maj (avertissement AltGr sur AZERTY) ; Win+V ramène une fenêtre visible
+>   restée derrière une autre.
+> - **Section 10** : si une touche de modification reste enfoncée plus d'une seconde, Ctrl+V n'est pas envoyé (copie seule,
+>   annoncée) ; tout échec survenu fenêtre masquée passe par la notification de l'icône ; 40 ms d'attente et codes de
+>   balayage avant Ctrl+V.
+> - **Section 11** : seul Win+V sans Ctrl, Alt ni Maj est repris ; les relâchements perdus remettent l'automate à zéro.
+> - **Section 12** : la version Debug n'écrit jamais la clé Run ; la version Release ne la réécrit que si le chemin a changé ;
+>   une seconde instance qui ne peut pas rediriger démarre à la place de la première si celle-ci a disparu, sinon affiche un
+>   message ; `publier.ps1` refuse les destinations dangereuses.
+
 ## 1. Objet
 
 Remplacer l'historique du presse-papiers de Windows 11 (Win+V) par un outil personnel plus complet.
