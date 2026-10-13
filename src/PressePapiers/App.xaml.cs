@@ -203,6 +203,13 @@ public sealed partial class App : Application
         var session = DemarrageSession.Appliquer(new SourceSessionWts(), _depot, _journal);
         _journal.Info($"Session Windows : {session.Etat}, {session.ElementsPurges} élément(s) de Temporaire purgé(s).");
 
+        // Après la purge et avant toute capture : un plantage ou une restauration a pu laisser des PNG sans élément.
+        var orphelines = _depot.NettoyerImagesOrphelines();
+        if (orphelines > 0)
+        {
+            _journal.Info($"{orphelines} image(s) orpheline(s) supprimée(s) du dossier des images.");
+        }
+
         CreerFenetrePrincipale(_base, _depot, dossiers);
         DemarrerRelais(_depot);
         DemarrerCrochet();

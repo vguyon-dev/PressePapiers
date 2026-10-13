@@ -254,7 +254,9 @@ public sealed class ResumesTests : IDisposable
         Assert.Equal(_moteur.Chercher(saisie).Count, _moteur.ChercherResumes(saisie).Count);
     }
 
-    [Fact]
+    // Mesure sans assertion, longue (une trentaine de secondes) : lancée à la demande seulement, pour que la suite reste
+    // rapide à chaque tâche. Pour la jouer : dotnet test --solution PressePapiers.slnx -- --explicit on
+    [Fact(Explicit = true)]
     public void Mesure_resumes_contre_elements_complets_sur_5000_elements_de_20_Ko()
     {
         var onglet = Temporaire;
