@@ -185,6 +185,28 @@ public sealed class DepotHistorique
         }
     }
 
+    /// <summary>
+    /// Résumés des éléments d'un onglet : mêmes lignes et même ordre que <see cref="ListerElements"/>, mais sans le contenu
+    /// complet (début du texte seulement, miniature des images), donc bien plus léger pour remplir la liste.
+    /// </summary>
+    public IReadOnlyList<ElementResume> ListerResumes(long ongletId)
+    {
+        lock (_verrou)
+        {
+            using var commande = Preparer(
+                $"SELECT {LecteurElement.ColonnesResume} FROM element WHERE onglet_id = $onglet ORDER BY date_usage DESC, id DESC",
+                null, ("$onglet", ongletId));
+            using var lecteur = commande.ExecuteReader();
+            var resumes = new List<ElementResume>();
+            while (lecteur.Read())
+            {
+                resumes.Add(LecteurElement.LireResume(lecteur));
+            }
+
+            return resumes;
+        }
+    }
+
     /// <summary>Lit un élément, ou null s'il n'existe pas.</summary>
     public Element? Lire(long elementId)
     {

@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.Data.Sqlite;
 using PressePapiers.Coeur.Modele;
 using PressePapiers.Coeur.Stockage;
 
@@ -36,7 +37,20 @@ public sealed class MoteurRecherche
     /// </summary>
     /// <param name="requete">Saisie brute de l'utilisateur, normalisée ici comme l'est le texte indexé.</param>
     /// <param name="limite">Nombre maximal de résultats ; zéro ou moins donne une liste vide.</param>
-    public IReadOnlyList<Element> Chercher(string requete, int limite = 500)
+    public IReadOnlyList<Element> Chercher(string requete, int limite = 500) =>
+        Executer(requete, limite, LecteurElement.Colonnes, LecteurElement.Lire);
+
+    /// <summary>
+    /// Même recherche que <see cref="Chercher"/> (mêmes règles, mêmes garde-fous, même ordre), mais ne relit que le résumé
+    /// de chaque résultat : début du texte et miniature des images, sans le contenu complet.
+    /// </summary>
+    /// <param name="requete">Saisie brute de l'utilisateur, normalisée ici comme l'est le texte indexé.</param>
+    /// <param name="limite">Nombre maximal de résultats ; zéro ou moins donne une liste vide.</param>
+    public IReadOnlyList<ElementResume> ChercherResumes(string requete, int limite = 500) =>
+        Executer(requete, limite, LecteurElement.ColonnesResume, LecteurElement.LireResume);
+
+    // Construction et exécution communes aux deux formes de résultat : seules les colonnes et leur lecture changent.
+    private List<T> Executer<T>(string requete, int limite, string colonnes, Func<SqliteDataReader, T> lire)
     {
         if (limite <= 0)
         {
@@ -53,11 +67,11 @@ public sealed class MoteurRecherche
         // Le verrou couvre toute la vie de la commande, car la connexion tient la liste de ses commandes sans protection.
         lock (_base.Connexion)
         {
-            return ChercherSousVerrou(mots, limite);
+            return ExecuterSousVerrou(mots, limite, colonnes, lire);
         }
     }
 
-    private List<Element> ChercherSousVerrou(List<string> mots, int limite)
+    private List<T> ExecuterSousVerrou<T>(List<string> mots, int limite, string colonnes, Func<SqliteDataReader, T> lire)
     {
         using var commande = _base.Connexion.CreateCommand();
         var conditions = new List<string>();
@@ -77,7 +91,7 @@ public sealed class MoteurRecherche
         }
 
         commande.CommandText = $"""
-            SELECT {LecteurElement.Colonnes}
+            SELECT {colonnes}
             FROM element
             WHERE {string.Join(" AND ", conditions)}
             ORDER BY date_usage DESC, id DESC
@@ -85,11 +99,11 @@ public sealed class MoteurRecherche
             """;
         commande.Parameters.AddWithValue("$limite", limite);
 
-        var resultats = new List<Element>();
+        var resultats = new List<T>();
         using var lecteur = commande.ExecuteReader();
         while (lecteur.Read())
         {
-            resultats.Add(LecteurElement.Lire(lecteur));
+            resultats.Add(lire(lecteur));
         }
 
         return resultats;
