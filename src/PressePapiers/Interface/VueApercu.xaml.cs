@@ -24,7 +24,7 @@ public sealed partial class VueApercu : UserControl
     private const int LargeurMaxDecodee = 1000;
 
     private FenetrePrincipaleVue? _vue;
-    private (long Id, string? Nom, long OngletId)? _affiche;
+    private (long Id, string? Nom, long OngletId, TypeElement Type)? _affiche;
     private List<OngletVue> _ongletsProposes = [];
 
     /// <summary>Crée l'aperçu, vide : <see cref="Lier"/> le branche sur le modèle de vue.</summary>
@@ -70,8 +70,9 @@ public sealed partial class VueApercu : UserControl
     private void Afficher(ElementVue? ligne)
     {
         // Une relecture du dépôt recrée les lignes : si c'est le même élément, rien ne change, et un nom en cours
-        // de saisie n'est pas effacé.
-        (long, string?, long)? cle = ligne is null ? null : (ligne.Id, ligne.Nom, ligne.OngletId);
+        // de saisie n'est pas effacé. Le type fait partie de la clé : un doublon enrichi de sa mise en forme change de
+        // type (texte brut devenu mis en forme) et doit rafraîchir l'aperçu.
+        (long, string?, long, TypeElement)? cle = ligne is null ? null : (ligne.Id, ligne.Nom, ligne.OngletId, ligne.Resume.Type);
         if (cle is not null && cle == _affiche)
         {
             return;

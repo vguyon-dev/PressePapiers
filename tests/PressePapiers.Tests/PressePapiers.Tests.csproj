@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Logique pure de l'interface (aucun contrôle WinUI), compilée ici pour être testée sans l'application. -->
+    <Compile Include="..\..\src\PressePapiers\Interface\ResumeElement.cs" Link="Interface\ResumeElement.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 

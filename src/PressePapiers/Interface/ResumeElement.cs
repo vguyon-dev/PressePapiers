@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using PressePapiers.Coeur.Modele;
 
 namespace PressePapiers.Interface;
@@ -20,9 +21,16 @@ internal static class ResumeElement
 
     /// <summary>
     /// Deux premières lignes non vides du texte, débarrassées de leur indentation ; une ellipse signale la suite.
-    /// Seuls les <see cref="ElementResume.LongueurMaxExtrait"/> premiers caractères sont lus : c'est tout ce que contient un résumé.
+    /// Seuls les <see cref="ElementResume.LongueurMaxExtrait"/> premiers caractères Unicode sont lus (un emoji compte pour
+    /// un, comme dans l'extrait stocké) : c'est tout ce que contient un résumé.
     /// </summary>
-    public static string ApercuTexte(string? texte)
+    /// <param name="texte">Extrait du texte.</param>
+    /// <param name="tailleTotaleOctets">
+    /// Taille en octets UTF-8 du texte complet (<see cref="ElementResume.Taille"/>) : indicateur fiable d'un extrait coupé,
+    /// y compris quand le texte fait exactement la longueur maximale. Sans elle, un extrait qui atteint cette longueur
+    /// est supposé coupé.
+    /// </param>
+    public static string ApercuTexte(string? texte, long? tailleTotaleOctets = null)
     {
         if (string.IsNullOrWhiteSpace(texte))
         {
@@ -30,11 +38,32 @@ internal static class ResumeElement
         }
 
         const int caracteresLus = ElementResume.LongueurMaxExtrait;
-        var debut = texte.Length > caracteresLus ? texte[..caracteresLus] : texte;
+        var (debut, caracteres) = Debut(texte, caracteresLus);
         var lignes = debut.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var resume = lignes.Length == 1 ? lignes[0] : lignes[0] + "\n" + lignes[1];
-        var suite = lignes.Length > 2 || texte.Length >= caracteresLus;
-        return suite ? resume + " …" : resume;
+        var extraitCoupe = tailleTotaleOctets is long total
+            ? Encoding.UTF8.GetByteCount(texte) < total
+            : caracteres >= caracteresLus;
+        return lignes.Length > 2 || extraitCoupe ? resume + " …" : resume;
+    }
+
+    // Les premiers caractères Unicode du texte (jamais une paire de substitution coupée en deux) et leur nombre.
+    private static (string Debut, int Caracteres) Debut(string texte, int maximum)
+    {
+        var caracteres = 0;
+        var fin = 0;
+        foreach (var rune in texte.EnumerateRunes())
+        {
+            if (caracteres == maximum)
+            {
+                break;
+            }
+
+            fin += rune.Utf16SequenceLength;
+            caracteres++;
+        }
+
+        return (texte[..fin], caracteres);
     }
 
     /// <summary>Texte d'aperçu d'un élément selon son type, tiré de son résumé (le contenu complet n'est pas lu).</summary>
@@ -48,7 +77,7 @@ internal static class ResumeElement
                 var chemins = (resume.Extrait ?? string.Empty).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
 
                 // L'extrait est coupé à sa longueur maximale : son dernier chemin peut être incomplet.
-                if ((resume.Extrait?.Length ?? 0) >= ElementResume.LongueurMaxExtrait && chemins.Count > 1)
+                if ((resume.Extrait?.EnumerateRunes().Count() ?? 0) >= ElementResume.LongueurMaxExtrait && chemins.Count > 1)
                 {
                     chemins.RemoveAt(chemins.Count - 1);
                 }
@@ -59,7 +88,7 @@ internal static class ResumeElement
                 var pluriel = total > 1 ? "fichiers" : "fichier";
                 return $"{total} {pluriel} : {string.Join(", ", noms)}{reste}";
             default:
-                var apercu = ApercuTexte(resume.Extrait);
+                var apercu = ApercuTexte(resume.Extrait, resume.Taille);
                 return apercu.Length > 0 ? apercu : "(contenu vide)";
         }
     }
