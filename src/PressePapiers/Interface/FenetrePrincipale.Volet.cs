@@ -118,4 +118,18 @@ public sealed partial class FenetrePrincipale
         menu.Items.Add(descendre);
         return menu;
     }
+
+    // Revient à la liste des éléments si la page Paramètres était ouverte.
+    private void MontrerHistorique()
+    {
+        _voletEnSynchronisation = true;
+        try
+        {
+            Navigation.SelectedItem = EntreesOnglets().FirstOrDefault(i => ((OngletVue)i.Tag).Id == Vue.OngletSelectionne?.Id);
+        }
+        finally
+        {
+            _voletEnSynchronisation = false;
+        }
+    }
 }

@@ -46,6 +46,9 @@ public sealed partial class VueApercu : UserControl
         Afficher(vue.ElementSelectionne);
     }
 
+    /// <summary>Vrai si ce nœud de l'arbre visuel est le champ Nom : ses touches (Entrée, flèches) lui appartiennent.</summary>
+    internal bool ContientChampNom(DependencyObject noeud) => ReferenceEquals(noeud, ChampNom);
+
     /// <summary>Place le curseur dans le champ Nom (F2 et bouton Nommer).</summary>
     public void FocaliserNom()
     {
