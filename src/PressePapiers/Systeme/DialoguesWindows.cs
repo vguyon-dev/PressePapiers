@@ -16,6 +16,16 @@ public sealed class DialoguesWindows : IDialogueDemarrage
         NatifDemarrage.AfficherMessage(0, message, Titre,
             NatifDemarrage.MB_OK | NatifDemarrage.MB_ICONERROR | NatifDemarrage.MB_SETFOREGROUND);
 
+    /// <summary>
+    /// Affiche un message d'information simple (icône d'information, bouton OK), qui ne signale pas une panne : par exemple
+    /// la confirmation qu'un choix de l'utilisateur a été respecté. Prêt à servir si <see cref="IDialogueDemarrage"/> le
+    /// demande un jour.
+    /// </summary>
+    /// <param name="message">Texte clair, en français.</param>
+    public void Signaler(string message) =>
+        NatifDemarrage.AfficherMessage(0, message, Titre,
+            NatifDemarrage.MB_OK | NatifDemarrage.MB_ICONINFORMATION | NatifDemarrage.MB_SETFOREGROUND);
+
     /// <inheritdoc />
     public bool Confirmer(string question) =>
         // Le bouton par défaut est Non : un Entrée distrait ne remplace jamais la base.

@@ -147,10 +147,17 @@ public sealed class IconeNotification : IDisposable
             _ajoutee = false;
         }
 
+        // NIM_ADD échoue aussi quand le Shell connaît déjà l'icône (avis TaskbarCreated arrivé tard, ou Shell lent qui a
+        // dépassé son délai après l'avoir ajoutée) : si NIM_MODIFY réussit, elle est bien là.
         if (!NatifIcone.NotifierIcone(NatifIcone.NimAdd, ref donnees))
         {
-            _journal.Avertissement("Ajout de l'icône de notification refusé par le Shell.");
-            return;
+            if (!NatifIcone.NotifierIcone(NatifIcone.NimModify, ref donnees))
+            {
+                _journal.Avertissement("Ajout de l'icône de notification refusé par le Shell.");
+                return;
+            }
+
+            _journal.Info("Ajout de l'icône refusé mais le Shell la connaissait déjà : elle est mise à jour.");
         }
 
         _ajoutee = true;

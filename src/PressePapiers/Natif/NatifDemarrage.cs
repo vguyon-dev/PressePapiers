@@ -5,11 +5,21 @@ namespace PressePapiers.Natif;
 /// <summary>Appels Windows du démarrage : boîte de message avant toute fenêtre, attente non bloquante de la redirection.</summary>
 internal static partial class NatifDemarrage
 {
-    internal const uint MB_OK = 0x0, MB_YESNO = 0x4, MB_ICONERROR = 0x10, MB_ICONWARNING = 0x30, MB_DEFBUTTON2 = 0x100, MB_SETFOREGROUND = 0x10000;
+    internal const uint MB_OK = 0x0, MB_YESNO = 0x4, MB_ICONERROR = 0x10, MB_ICONWARNING = 0x30, MB_ICONINFORMATION = 0x40,
+                        MB_DEFBUTTON2 = 0x100, MB_SETFOREGROUND = 0x10000;
     internal const int IDYES = 6;
 
     /// <summary>Attente de CoWaitForMultipleObjects : sans drapeau particulier, les messages COM continuent d'être pompés.</summary>
     internal const uint CWMO_DEFAULT = 0;
+
+    /// <summary>Contrôle des conditions d'exécution de XAML, appelé en tête du Main généré par WinUI.</summary>
+    [LibraryImport("Microsoft.ui.xaml.dll")]
+    internal static partial void XamlCheckProcessRequirements();
+
+    /// <summary>Autorise un autre processus à prendre le premier plan (le processus appelant doit pouvoir le donner).</summary>
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool AllowSetForegroundWindow(uint idProcessus);
 
     [LibraryImport("user32.dll", EntryPoint = "MessageBoxW", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial int AfficherMessage(nint proprietaire, string texte, string titre, uint style);

@@ -16,8 +16,12 @@ public sealed class EcrivainPressePapiers
     /// <summary>Crée l'écrivain ; <paramref name="hwndRelais"/> est la fenêtre qui ouvre le presse-papiers et en devient propriétaire.</summary>
     /// <param name="hwndRelais">Fenêtre relais, créée sur le fil d'interface.</param>
     /// <param name="journal">Journal des écritures en échec.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="hwndRelais"/> est nul : EmptyClipboard échouerait à chaque écriture, faute de fenêtre propriétaire.
+    /// </exception>
     public EcrivainPressePapiers(nint hwndRelais, IJournal journal)
     {
+        ArgumentOutOfRangeException.ThrowIfZero(hwndRelais);
         ArgumentNullException.ThrowIfNull(journal);
         _hwndRelais = hwndRelais;
         _journal = journal;
@@ -152,13 +156,20 @@ public sealed class EcrivainPressePapiers
                 return false;
             }
 
-            var principal = Poser(formats[0]);
+            // Le presse-papiers est déjà vidé : si le contenu principal ne passe pas, l'ancien contenu de l'utilisateur est
+            // perdu et rien ne le remplace. Les formats secondaires seuls n'auraient pas de sens : on s'arrête là.
+            if (!Poser(formats[0]))
+            {
+                _journal.Erreur("Le presse-papiers a été vidé mais le contenu principal n'a pas pu y être posé : il reste vide.");
+                return false;
+            }
+
             for (var i = 1; i < formats.Count; i++)
             {
                 Poser(formats[i]);   // un format secondaire (RTF, PNG, marque) qui échoue est noté mais n'annule pas la copie
             }
 
-            return principal;
+            return true;
         }
         finally
         {

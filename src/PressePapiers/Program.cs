@@ -16,21 +16,41 @@ public static class Program
     // Clé d'instance : deux lancements qui la partagent sont la même application.
     private const string CleInstance = "PressePapiers";
 
-    // Au-delà, la première instance est jugée muette : la seconde s'arrête quand même, en le notant.
+    // Au-delà, l'instance principale est jugée muette.
     private const uint DelaiRedirectionMs = 15_000;
 
     /// <summary>Démarre l'application WinUI 3 sur un fil à appartement unique, ou redirige vers l'instance déjà lancée.</summary>
     [STAThread]
     public static void Main()
     {
+        // Comme le Main généré par WinUI : contrôle que le processus remplit les conditions de XAML (manifeste, version
+        // de Windows) avant tout autre appel.
+        NatifDemarrage.XamlCheckProcessRequirements();
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
         // Avant toute fenêtre : la décision se prend tant que le processus n'a rien créé.
         var principale = AppInstance.FindOrRegisterForKey(CleInstance);
         if (!principale.IsCurrent)
         {
-            RedirigerVers(principale);
-            return;
+            if (RedirigerVers(principale))
+            {
+                return;
+            }
+
+            // L'instance principale a pu s'arrêter pendant la redirection : cette instance prend alors sa place.
+            principale = AppInstance.FindOrRegisterForKey(CleInstance);
+            if (!principale.IsCurrent)
+            {
+                Noter(journal => journal.Avertissement(
+                    $"Seconde instance (processus {Environment.ProcessId}) : l'instance principale ne répond pas, arrêt."));
+                NatifDemarrage.AfficherMessage(0,
+                    "PressePapiers est déjà lancé mais ne répond pas. Ferme-le depuis le Gestionnaire des tâches, puis relance-le.",
+                    "PressePapiers", NatifDemarrage.MB_OK | NatifDemarrage.MB_ICONWARNING | NatifDemarrage.MB_SETFOREGROUND);
+                return;
+            }
+
+            Noter(journal => journal.Info(
+                $"Seconde instance (processus {Environment.ProcessId}) : l'instance principale a disparu, celle-ci démarre à sa place."));
         }
 
         // L'événement arrive sur un fil quelconque : App le ramène sur le fil d'interface.
@@ -45,16 +65,20 @@ public static class Program
         });
     }
 
-    // Transmet l'activation à l'instance principale puis rend la main (le processus se termine ensuite). L'appel est lancé
-    // dans une tâche, car RedirectActivationToAsync a besoin du fil STA : on attend donc par CoWaitForMultipleObjects, qui
-    // laisse ce fil pomper ses messages, au lieu d'un Wait() qui le bloquerait.
-    private static void RedirigerVers(AppInstance principale)
+    // Transmet l'activation à l'instance principale ; renvoie vrai si elle l'a reçue. L'appel est lancé sur une tâche du
+    // pool et ce fil l'attend par CoWaitForMultipleObjects : ce fil STA doit continuer à pomper ses messages COM pendant
+    // l'attente (un Wait() bloquant pourrait empêcher l'appel inter-processus d'aboutir).
+    private static bool RedirigerVers(AppInstance principale)
     {
+        // L'instance principale va vouloir afficher sa fenêtre : c'est ce processus, au premier plan, qui peut le lui permettre.
+        NatifDemarrage.AllowSetForegroundWindow(principale.ProcessId);
+
         var arguments = AppInstance.GetCurrent().GetActivatedEventArgs();
         var termine = NatifDemarrage.CreerEvenement(0, manuel: true, signale: false, 0);
         if (termine == 0)
         {
-            return;
+            Noter(journal => journal.Avertissement("Seconde instance : événement de redirection impossible à créer."));
+            return false;
         }
 
         Exception? echec = null;
@@ -76,33 +100,38 @@ public static class Program
 
         var resultat = NatifDemarrage.AttendreSansBloquer(termine, DelaiRedirectionMs);
 
-        // Le handle reste ouvert en cas de délai dépassé : la tâche peut encore le signaler, et le processus s'arrête de toute façon.
-        if (resultat == 0)
+        // Le handle reste ouvert en cas de délai dépassé : la tâche peut encore le signaler.
+        if (resultat != 0)
+        {
+            echec = new TimeoutException("L'instance principale n'a pas répondu.");
+        }
+        else
         {
             NatifDemarrage.CloseHandle(termine);
         }
 
-        NoterRedirection(resultat == 0 ? echec : new TimeoutException("L'instance principale n'a pas répondu."));
+        if (echec is null)
+        {
+            Noter(journal => journal.Info(
+                $"Seconde instance (processus {Environment.ProcessId}) : activation redirigée vers l'instance principale, arrêt."));
+            return true;
+        }
+
+        Noter(journal => journal.Avertissement($"Seconde instance (processus {Environment.ProcessId}) : redirection impossible.", echec));
+        return false;
     }
 
-    // Une trace au journal de l'instance principale (fichier partagé). Jamais d'exception : cette instance va s'arrêter.
-    private static void NoterRedirection(Exception? echec)
+    // Une trace au journal de l'instance principale (fichier partagé). Jamais d'exception : rien ne doit empêcher la suite.
+    private static void Noter(Action<JournalSerilog> ecrire)
     {
         try
         {
             using var journal = new JournalSerilog(DossierDonnees.ParDefaut().Journal);
-            if (echec is null)
-            {
-                journal.Info($"Seconde instance (processus {Environment.ProcessId}) : activation redirigée vers l'instance principale, arrêt.");
-            }
-            else
-            {
-                journal.Avertissement($"Seconde instance (processus {Environment.ProcessId}) : redirection impossible, arrêt.", echec);
-            }
+            ecrire(journal);
         }
         catch (Exception)
         {
-            // Pas de journal possible (dossier inaccessible) : la seconde instance s'arrête sans rien dire.
+            // Pas de journal possible (dossier inaccessible) : la seconde instance continue sans rien dire.
         }
     }
 }

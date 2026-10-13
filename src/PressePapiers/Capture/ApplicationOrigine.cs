@@ -1,5 +1,3 @@
-using System.ComponentModel;
-using System.Diagnostics;
 using PressePapiers.Natif;
 
 namespace PressePapiers.Capture;
@@ -8,6 +6,14 @@ namespace PressePapiers.Capture;
 public static class ApplicationOrigine
 {
     private const string HoteApplicationsUwp = "ApplicationFrameHost";
+
+    // Un nom relevé reste valable une minute : assez pour les rafales de copies, trop court pour qu'un identifiant de
+    // processus réutilisé par Windows donne un nom faux.
+    private static readonly TimeSpan _dureeCache = TimeSpan.FromMinutes(1);
+    private const int TailleMaxCache = 64;
+
+    private static readonly object _verrou = new();
+    private static readonly Dictionary<uint, (string? Nom, long Expiration)> _cache = [];
 
     /// <summary>
     /// Nom du processus de la fenêtre, sans extension. Pour une application UWP, la fenêtre appartient à
@@ -57,7 +63,8 @@ public static class ApplicationOrigine
         return id;
     }
 
-    // Le processus peut avoir disparu entre la copie et la lecture, ou refuser l'accès : l'origine est alors inconnue.
+    // Appelé sur le fil d'interface à chaque copie : un petit cache évite même l'ouverture du processus pour les copies
+    // en rafale depuis la même application.
     private static string? NomProcessus(uint idProcessus)
     {
         if (idProcessus == 0)
@@ -65,14 +72,55 @@ public static class ApplicationOrigine
             return null;
         }
 
-        try
+        var maintenant = Environment.TickCount64;
+        lock (_verrou)
         {
-            using var processus = Process.GetProcessById((int)idProcessus);
-            return processus.ProcessName;
+            if (_cache.TryGetValue(idProcessus, out var connu) && connu.Expiration > maintenant)
+            {
+                return connu.Nom;
+            }
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception)
+
+        var nom = LireNomProcessus(idProcessus);
+        lock (_verrou)
+        {
+            if (_cache.Count >= TailleMaxCache)
+            {
+                _cache.Clear();
+            }
+
+            _cache[idProcessus] = (nom, maintenant + (long)_dureeCache.TotalMilliseconds);
+        }
+
+        return nom;
+    }
+
+    // OpenProcess avec le droit minimal puis QueryFullProcessImageName : quelques microsecondes, là où
+    // Process.GetProcessById énumère tous les processus de la machine. Processus disparu ou accès refusé : origine inconnue.
+    private static unsafe string? LireNomProcessus(uint idProcessus)
+    {
+        var processus = NatifProcessus.OpenProcess(NatifProcessus.PROCESS_QUERY_LIMITED_INFORMATION, false, idProcessus);
+        if (processus == 0)
         {
             return null;
+        }
+
+        try
+        {
+            const int Capacite = 1024;
+            var tampon = stackalloc char[Capacite];
+            var longueur = (uint)Capacite;
+            if (!NatifProcessus.QueryFullProcessImageName(processus, 0, tampon, ref longueur) || longueur == 0)
+            {
+                return null;
+            }
+
+            var nom = Path.GetFileNameWithoutExtension(new ReadOnlySpan<char>(tampon, (int)longueur));
+            return nom.IsEmpty ? null : nom.ToString();
+        }
+        finally
+        {
+            NatifProcessus.CloseHandle(processus);
         }
     }
 }

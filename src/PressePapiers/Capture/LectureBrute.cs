@@ -10,7 +10,7 @@ namespace PressePapiers.Capture;
 /// <summary>
 /// Lecture synchrone du presse-papiers : ouvre avec réessais, copie les octets des formats retenus puis referme aussitôt.
 /// Elle peut bloquer longtemps si le propriétaire d'un format en rendu différé ne répond pas : l'appelant la lance sur un
-/// fil dédié et abandonne l'attente au bout de deux secondes.
+/// fil dédié, cesse d'attendre au bout de deux secondes et reprend alors le texte déjà publié comme résultat partiel.
 /// </summary>
 internal static class LectureBrute
 {
@@ -20,7 +20,10 @@ internal static class LectureBrute
     /// <summary>Pause entre deux essais d'ouverture.</summary>
     public static readonly TimeSpan PauseEntreEssais = TimeSpan.FromMilliseconds(25);
 
-    /// <summary>Taille maximale d'un texte (en octets UTF-8), d'un RTF ou d'un HTML : au-delà, la copie est ignorée.</summary>
+    /// <summary>
+    /// Taille maximale d'un texte (en octets UTF-8), d'un RTF ou d'un HTML : au-delà, un texte fait ignorer la copie, un RTF
+    /// ou un HTML seulement sa mise en forme.
+    /// </summary>
     public const long TailleMaxTexte = 10L * 1024 * 1024;
 
     /// <summary>Taille maximale d'un DIB (une image 8K en 32 bits fait environ 133 Mo).</summary>
@@ -30,8 +33,13 @@ internal static class LectureBrute
     /// Lit le contenu selon l'ordre de la spec (section 4) : CF_HDROP donne Fichiers ; sinon un texte donne MisEnForme
     /// si un RTF ou un HTML l'accompagne, Texte sinon ; sinon CF_DIBV5 puis CF_DIB donnent Image.
     /// </summary>
+    /// <param name="journal">Journal des copies ignorées.</param>
+    /// <param name="publierPartiel">
+    /// Reçoit le texte dès qu'il est lu, avant le RTF et le HTML dont la lecture peut bloquer : l'appelant le garde comme
+    /// résultat partiel s'il cesse d'attendre. Appelé sur le fil de lecture.
+    /// </param>
     /// <returns>Le contenu, ou null (marque interne présente, presse-papiers occupé, vide, illisible ou trop gros).</returns>
-    public static ContenuBrut? Lire(IJournal journal)
+    public static ContenuBrut? Lire(IJournal journal, Action<ContenuBrut>? publierPartiel = null)
     {
         if (!Ouvrir(journal))
         {
@@ -40,13 +48,21 @@ internal static class LectureBrute
 
         try
         {
-            return LireOuvert(journal);
+            return LireOuvert(journal, publierPartiel);
         }
         finally
         {
             NatifPressePapiers.CloseClipboard();
         }
     }
+
+    /// <summary>Taille lisible au journal : en octets, en Ko sous 1 Mo, en Mo avec une décimale au-delà.</summary>
+    internal static string Taille(long octets) => octets switch
+    {
+        < 1024 => $"{octets} octets",
+        < 1024 * 1024 => $"{octets / 1024.0:0.#} Ko",
+        _ => $"{octets / (1024.0 * 1024):0.#} Mo",
+    };
 
     // OpenClipboard(NULL) : l'outil ne lie pas la lecture à sa fenêtre relais, qui vit sur un autre fil.
     private static bool Ouvrir(IJournal journal)
@@ -70,7 +86,7 @@ internal static class LectureBrute
         return false;
     }
 
-    private static ContenuBrut? LireOuvert(IJournal journal)
+    private static ContenuBrut? LireOuvert(IJournal journal, Action<ContenuBrut>? publierPartiel)
     {
         if (MarquePresente(journal))
         {
@@ -84,7 +100,7 @@ internal static class LectureBrute
 
         if (NatifPressePapiers.IsClipboardFormatAvailable(NatifPressePapiers.CfUnicodeText))
         {
-            return LireTexte(journal);
+            return LireTexte(journal, publierPartiel);
         }
 
         return LireImage(journal);
@@ -107,7 +123,7 @@ internal static class LectureBrute
     private static ContenuBrut? LireFichiers(IJournal journal)
     {
         var octets = Copier(NatifPressePapiers.GetClipboardData(NatifPressePapiers.CfHDrop), TailleMaxTexte,
-            "liste de fichiers", journal);
+            "la liste de fichiers", "Copie ignorée", journal);
         if (octets is null)
         {
             return null;
@@ -123,12 +139,12 @@ internal static class LectureBrute
         return new ContenuBrut(TypeElement.Fichiers, Fichiers: chemins);
     }
 
-    private static ContenuBrut? LireTexte(IJournal journal)
+    private static ContenuBrut? LireTexte(IJournal journal, Action<ContenuBrut>? publierPartiel)
     {
         // Le bloc est en UTF-16 : un texte de plus de TailleMaxTexte caractères dépasse forcément la limite en UTF-8,
         // inutile de le copier (le petit surplus tient compte de l'arrondi de GlobalSize).
         var octets = Copier(NatifPressePapiers.GetClipboardData(NatifPressePapiers.CfUnicodeText),
-            2 * TailleMaxTexte + 128, "texte", journal, TailleMaxTexte);
+            2 * TailleMaxTexte + 128, "le texte", "Copie ignorée", journal, TailleMaxTexte);
         if (octets is null)
         {
             return null;
@@ -138,7 +154,7 @@ internal static class LectureBrute
         var tailleUtf8 = Encoding.UTF8.GetByteCount(texte);
         if (tailleUtf8 > TailleMaxTexte)
         {
-            journal.Avertissement($"Copie ignorée : texte de {tailleUtf8 / (1024 * 1024)} Mo, au-delà de {TailleMaxTexte / (1024 * 1024)} Mo.");
+            journal.Avertissement($"Copie ignorée : le texte fait {Taille(tailleUtf8)}, au-delà de {Taille(TailleMaxTexte)}.");
             return null;
         }
 
@@ -147,6 +163,9 @@ internal static class LectureBrute
             return null;
         }
 
+        // Le texte suffit à garder la copie : il est publié avant les formats de mise en forme, plus souvent rendus en différé.
+        publierPartiel?.Invoke(new ContenuBrut(TypeElement.Texte, Texte: texte));
+
         var rtf = LireFormatTexte(() => FormatsPressePapiers.Rtf, "RTF", journal);
         var html = LireFormatTexte(() => FormatsPressePapiers.Html, "HTML", journal);
         var type = rtf is not null || html is not null ? TypeElement.MisEnForme : TypeElement.Texte;
@@ -154,6 +173,7 @@ internal static class LectureBrute
     }
 
     // RTF et HTML sont des textes terminés par un nul dans un bloc que GlobalSize peut avoir arrondi : on coupe au premier nul.
+    // Leur échec ne coûte que la mise en forme : le texte, déjà lu, est gardé.
     private static byte[]? LireFormatTexte(Func<uint> format, string nom, IJournal journal)
     {
         uint identifiant;
@@ -163,7 +183,7 @@ internal static class LectureBrute
         }
         catch (InvalidOperationException exception)
         {
-            journal.Avertissement($"Format {nom} indisponible : mise en forme ignorée.", exception);
+            journal.Avertissement($"Format {nom} indisponible : mise en forme ignorée, le texte est gardé.", exception);
             return null;
         }
 
@@ -172,7 +192,8 @@ internal static class LectureBrute
             return null;
         }
 
-        var octets = Copier(NatifPressePapiers.GetClipboardData(identifiant), TailleMaxTexte, nom, journal);
+        var octets = Copier(NatifPressePapiers.GetClipboardData(identifiant), TailleMaxTexte, $"le {nom}",
+            $"Mise en forme {nom} ignorée (le texte est gardé)", journal);
         if (octets is null)
         {
             return null;
@@ -185,15 +206,26 @@ internal static class LectureBrute
 
     private static ContenuBrut? LireImage(IJournal journal)
     {
-        // CF_DIBV5 d'abord : Windows fabrique CF_DIB par conversion, et l'alpha s'y perd.
-        foreach (var format in new[] { NatifPressePapiers.CfDibV5, NatifPressePapiers.CfDib })
-        {
-            if (!NatifPressePapiers.IsClipboardFormatAvailable(format))
-            {
-                continue;
-            }
+        // CF_DIBV5 d'abord : Windows fabrique CF_DIB par conversion, et l'alpha s'y perd. Un échec sur CF_DIBV5 laisse
+        // encore CF_DIB : la copie n'est dite ignorée qu'au dernier format possible.
+        var dibV5Present = NatifPressePapiers.IsClipboardFormatAvailable(NatifPressePapiers.CfDibV5);
+        var dibPresent = NatifPressePapiers.IsClipboardFormatAvailable(NatifPressePapiers.CfDib);
 
-            var dib = Copier(NatifPressePapiers.GetClipboardData(format), TailleMaxImage, "image", journal);
+        if (dibV5Present)
+        {
+            var consequence = dibPresent ? "Image lue en CF_DIB, sans transparence" : "Copie ignorée";
+            var dib = Copier(NatifPressePapiers.GetClipboardData(NatifPressePapiers.CfDibV5), TailleMaxImage,
+                "l'image CF_DIBV5", consequence, journal);
+            if (dib is not null)
+            {
+                return new ContenuBrut(TypeElement.Image, Dib: dib);
+            }
+        }
+
+        if (dibPresent)
+        {
+            var dib = Copier(NatifPressePapiers.GetClipboardData(NatifPressePapiers.CfDib), TailleMaxImage,
+                "l'image", "Copie ignorée", journal);
             if (dib is not null)
             {
                 return new ContenuBrut(TypeElement.Image, Dib: dib);
@@ -211,12 +243,22 @@ internal static class LectureBrute
         return new string(fin < 0 ? caracteres : caracteres[..fin]);
     }
 
-    /// <summary>Copie un bloc mémoire du presse-papiers ; null si la poignée est nulle, vide, verrouillage impossible ou trop gros.</summary>
-    private static byte[]? Copier(nint poignee, long tailleMax, string description, IJournal journal, long? limiteAffichee = null)
+    /// <summary>
+    /// Copie un bloc mémoire du presse-papiers ; null (noté au journal) si la poignée est nulle, vide, verrouillage
+    /// impossible ou trop gros.
+    /// </summary>
+    /// <param name="poignee">Poignée rendue par GetClipboardData.</param>
+    /// <param name="tailleMax">Taille du bloc au-delà de laquelle il n'est pas copié.</param>
+    /// <param name="description">Ce que contient le bloc, avec son article (« le texte », « le RTF »).</param>
+    /// <param name="consequence">Effet de l'échec, en tête du message (« Copie ignorée », « Mise en forme RTF ignorée »).</param>
+    /// <param name="journal">Journal des échecs.</param>
+    /// <param name="limiteAffichee">Limite à citer au journal quand elle diffère de <paramref name="tailleMax"/>.</param>
+    private static byte[]? Copier(nint poignee, long tailleMax, string description, string consequence, IJournal journal,
+                                  long? limiteAffichee = null)
     {
         if (poignee == 0)
         {
-            journal.Avertissement($"Copie ignorée : les données « {description} » n'ont pas pu être obtenues (erreur Windows {Marshal.GetLastPInvokeError()}).");
+            journal.Avertissement($"{consequence} : impossible d'obtenir {description} (erreur Windows {Marshal.GetLastPInvokeError()}).");
             return null;
         }
 
@@ -228,14 +270,14 @@ internal static class LectureBrute
 
         if (taille > tailleMax)
         {
-            journal.Avertissement($"Copie ignorée : {description} de {taille / (1024 * 1024)} Mo, au-delà de {(limiteAffichee ?? tailleMax) / (1024 * 1024)} Mo.");
+            journal.Avertissement($"{consequence} : {description} fait {Taille(taille)}, au-delà de {Taille(limiteAffichee ?? tailleMax)}.");
             return null;
         }
 
         var adresse = NatifPressePapiers.GlobalLock(poignee);
         if (adresse == 0)
         {
-            journal.Avertissement($"Copie ignorée : verrouillage impossible des données « {description} » (erreur Windows {Marshal.GetLastPInvokeError()}).");
+            journal.Avertissement($"{consequence} : verrouillage impossible pour {description} (erreur Windows {Marshal.GetLastPInvokeError()}).");
             return null;
         }
 

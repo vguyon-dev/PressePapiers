@@ -21,6 +21,16 @@ public sealed class RelaisWindows : IDisposable
     // Identifiant du raccourci de secours auprès de RegisterHotKey.
     private const int IdRaccourci = 1;
 
+    // Minuterie des nouveaux essais d'inscription aux notifications de session : au démarrage de Windows, les services
+    // Bureau à distance peuvent ne pas être prêts (WTSRegisterSessionNotification échoue alors, souvent avec 1702).
+    private const nuint IdMinuterieSession = 1;
+    private const uint DelaiEssaiSessionMs = 10_000;
+    private const int EssaisSessionMax = 30;
+
+    // Procédures des fenêtres que DestroyWindow n'a pas pu détruire : Windows peut encore les appeler, le délégué doit
+    // donc survivre à l'objet, jusqu'à la fin du processus.
+    private static readonly List<NatifRelais.ProcedureFenetre> _proceduresOrphelines = [];
+
     private readonly IJournal _journal;
 
     // La procédure est gardée dans un champ : le pointeur donné à Windows ne retient pas le délégué, et le ramasse-miettes
@@ -34,6 +44,8 @@ public sealed class RelaisWindows : IDisposable
     private bool _libere;
     private bool _ecoutePressePapiers;
     private bool _sessionInscrite;
+    private bool _minuterieSession;
+    private int _essaisSession;
     private Raccourci? _raccourci;
 
     /// <summary>Crée la fenêtre sur le fil courant, qui doit être le fil d'interface.</summary>
@@ -92,11 +104,7 @@ public sealed class RelaisWindows : IDisposable
             _journal.Avertissement($"TaskbarCreated non autorisé par le filtre de messages (code {Marshal.GetLastPInvokeError()}).");
         }
 
-        _sessionInscrite = NatifRelais.InscrireNotificationsSession(_hwnd, NatifRelais.NotifyForThisSession);
-        if (!_sessionInscrite)
-        {
-            _journal.Avertissement($"Notifications de session non inscrites (code {Marshal.GetLastPInvokeError()}).");
-        }
+        InscrireSession();
     }
 
     /// <summary>Handle de la fenêtre relais ; zéro une fois le relais libéré.</summary>
@@ -167,10 +175,17 @@ public sealed class RelaisWindows : IDisposable
         codeErreur = Marshal.GetLastPInvokeError();
         _journal.Avertissement($"Raccourci de secours {raccourci} refusé (code {codeErreur}).");
 
-        if (precedent is { } ancien
-            && NatifRelais.EnregistrerRaccourciGlobal(_hwnd, IdRaccourci, ancien.Modificateurs, ancien.ToucheVirtuelle))
+        if (precedent is { } ancien)
         {
-            _raccourci = ancien;
+            if (NatifRelais.EnregistrerRaccourciGlobal(_hwnd, IdRaccourci, ancien.Modificateurs, ancien.ToucheVirtuelle))
+            {
+                _raccourci = ancien;
+            }
+            else
+            {
+                _journal.Erreur($"L'ancien raccourci de secours {ancien} n'a pas pu être rétabli (code {Marshal.GetLastPInvokeError()}) : "
+                                + "l'outil n'a plus de raccourci de secours.");
+            }
         }
 
         return false;
@@ -197,6 +212,7 @@ public sealed class RelaisWindows : IDisposable
         }
 
         RetirerRaccourci();
+        ArreterMinuterieSession();
         if (_ecoutePressePapiers)
         {
             NatifRelais.RetirerEcouteurPressePapiers(_hwnd);
@@ -214,16 +230,76 @@ public sealed class RelaisWindows : IDisposable
         var hwnd = _hwnd;
         _hwnd = 0;
 
-        // DestroyWindow n'agit que sur le fil créateur ; ailleurs, la fenêtre reste et l'échec est noté.
+        // DestroyWindow n'agit que sur le fil créateur ; ailleurs, la fenêtre reste et l'échec est noté. Sa procédure
+        // reste alors joignable par Windows : le délégué est retenu, et la classe, encore utilisée, n'est pas retirée.
         if (!NatifRelais.DetruireFenetre(hwnd))
         {
             _journal.Avertissement($"Destruction du relais impossible (code {Marshal.GetLastPInvokeError()}), appelée depuis le mauvais fil ?");
+            lock (_proceduresOrphelines)
+            {
+                _proceduresOrphelines.Add(_procedure);
+            }
+
+            return;
         }
 
         NatifRelais.RetirerClasse(_nomClasse, _instance);
     }
 
     private void ControlerVivant() => ObjectDisposedException.ThrowIf(_libere, this);
+
+    // Inscription aux notifications de session (déverrouillage) ; en cas d'échec, nouvel essai toutes les 10 secondes
+    // pendant cinq minutes. Un seul avertissement au premier échec, puis une ligne à l'issue.
+    private void InscrireSession()
+    {
+        _essaisSession++;
+        _sessionInscrite = NatifRelais.InscrireNotificationsSession(_hwnd, NatifRelais.NotifyForThisSession);
+        if (_sessionInscrite)
+        {
+            ArreterMinuterieSession();
+            if (_essaisSession > 1)
+            {
+                _journal.Info($"Notifications de session inscrites au {_essaisSession}e essai.");
+            }
+
+            return;
+        }
+
+        var code = Marshal.GetLastPInvokeError();
+        if (_essaisSession >= EssaisSessionMax)
+        {
+            ArreterMinuterieSession();
+            _journal.Avertissement($"Notifications de session toujours refusées après {EssaisSessionMax} essais (code {code}) : "
+                                   + "le hook Win+V ne sera pas réinstallé au déverrouillage.");
+            return;
+        }
+
+        if (_essaisSession == 1)
+        {
+            _journal.Avertissement($"Notifications de session non inscrites (code {code}) : nouvel essai toutes les "
+                                   + $"{DelaiEssaiSessionMs / 1000} s.");
+        }
+
+        if (!_minuterieSession)
+        {
+            _minuterieSession = NatifRelais.PoserMinuterie(_hwnd, IdMinuterieSession, DelaiEssaiSessionMs, 0) != 0;
+            if (!_minuterieSession)
+            {
+                _journal.Avertissement($"Minuterie des nouveaux essais impossible (code {Marshal.GetLastPInvokeError()}).");
+            }
+        }
+    }
+
+    private void ArreterMinuterieSession()
+    {
+        if (!_minuterieSession)
+        {
+            return;
+        }
+
+        NatifRelais.RetirerMinuterie(_hwnd, IdMinuterieSession);
+        _minuterieSession = false;
+    }
 
     // Procédure de fenêtre : une exception qui la traverserait remonterait dans du code natif et tuerait le processus.
     private nint Traiter(nint hwnd, uint message, nint wParam, nint lParam)
@@ -257,6 +333,10 @@ public sealed class RelaisWindows : IDisposable
 
                 case NatifRelais.WmWtsSessionChange when wParam == NatifRelais.WtsSessionUnlock:
                     SessionDeverrouillee?.Invoke();
+                    return 0;
+
+                case NatifRelais.WmTimer when (nuint)wParam == IdMinuterieSession:
+                    InscrireSession();
                     return 0;
 
                 case NatifRelais.WmPowerBroadcast when wParam == NatifRelais.PbtApmResumeAutomatic:
