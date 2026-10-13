@@ -21,6 +21,14 @@ public sealed class ServiceParametres
         Converters = { new JsonStringEnumConverter(allowIntegerValues: false) },
     };
 
+    private static readonly object VerrouEcriture = new();
+
+    private static readonly JsonDocumentOptions OptionsDocument = new()
+    {
+        AllowTrailingCommas = true,
+        CommentHandling = JsonCommentHandling.Skip,
+    };
+
     private static readonly UTF8Encoding Utf8SansMarque = new(encoderShouldEmitUTF8Identifier: false);
 
     private const int LargeurMinimale = 400;
@@ -38,7 +46,11 @@ public sealed class ServiceParametres
         _journal = journal;
     }
 
-    /// <summary>Lit les réglages ; les valeurs par défaut si le fichier est absent ou illisible (avertissement au journal).</summary>
+    /// <summary>
+    /// Lit les réglages. Les valeurs par défaut si le fichier est absent, vide ou n'est pas du JSON (avertissement au journal).
+    /// Une valeur inconnue ou inutilisable (texte d'énumération inconnu, type faux, nombre absurde, null) ne perd que sa propre
+    /// propriété, qui reprend son défaut : les autres réglages du fichier sont gardés. Un seul avertissement liste les corrections.
+    /// </summary>
     public Parametres Charger()
     {
         if (!File.Exists(_cheminFichier))
@@ -51,14 +63,19 @@ public sealed class ServiceParametres
         try
         {
             var json = File.ReadAllText(_cheminFichier, Encoding.UTF8);
-            var lus = JsonSerializer.Deserialize<Parametres>(json, Options);
-            if (lus is null)
+            using var document = JsonDocument.Parse(json, OptionsDocument);
+            if (document.RootElement.ValueKind == JsonValueKind.Null)
             {
                 _journal.Avertissement($"Fichier de réglages vide ({_cheminFichier}) : valeurs par défaut.");
                 return new Parametres();
             }
 
-            return Corriger(lus);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("Le fichier de réglages doit contenir un objet JSON.");
+            }
+
+            return Lire(document.RootElement);
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -67,7 +84,11 @@ public sealed class ServiceParametres
         }
     }
 
-    /// <summary>Écrit les réglages de façon atomique : fichier temporaire, puis <c>File.Move(..., true)</c>.</summary>
+    /// <summary>
+    /// Écrit les réglages de façon atomique : fichier temporaire au nom unique (un reste verrouillé d'une coupure ne
+    /// bloque rien), puis <c>File.Move(..., true)</c>. Les enregistrements simultanés du processus sont mis en file :
+    /// Windows refuse que deux déplacements remplacent en même temps le même fichier.
+    /// </summary>
     public void Enregistrer(Parametres parametres)
     {
         ArgumentNullException.ThrowIfNull(parametres);
@@ -80,43 +101,103 @@ public sealed class ServiceParametres
 
         // Le fichier définitif n'est remplacé que par un fichier complet : une coupure en cours d'écriture
         // laisse l'ancien contenu intact, jamais un fichier tronqué.
-        var temporaire = _cheminFichier + ".tmp";
-        try
+        var temporaire = $"{_cheminFichier}.{Guid.NewGuid():N}.tmp";
+        var contenu = JsonSerializer.Serialize(parametres, Options);
+        lock (VerrouEcriture)
         {
-            File.WriteAllText(temporaire, JsonSerializer.Serialize(parametres, Options), Utf8SansMarque);
-            File.Move(temporaire, _cheminFichier, overwrite: true);
-        }
-        catch
-        {
-            TenterSupprimer(temporaire);
-            throw;
+            try
+            {
+                File.WriteAllText(temporaire, contenu, Utf8SansMarque);
+                File.Move(temporaire, _cheminFichier, overwrite: true);
+            }
+            catch
+            {
+                TenterSupprimer(temporaire);
+                throw;
+            }
         }
     }
 
-    // Une valeur lisible mais inutilisable (null écrit à la main, plafond négatif, fenêtre minuscule)
-    // est remplacée par son défaut, sans perdre le reste des réglages.
-    private Parametres Corriger(Parametres lus)
+    // Chaque propriété est lue pour elle-même : celle qui est inutilisable reprend son défaut et sa seule valeur est perdue.
+    private Parametres Lire(JsonElement racine)
     {
         var defauts = new Parametres();
-        var corriges = lus with
+        var remplacees = new List<string>();
+
+        var lus = new Parametres
         {
-            RaccourciSecours = string.IsNullOrWhiteSpace(lus.RaccourciSecours) ? defauts.RaccourciSecours : lus.RaccourciSecours,
-            ApplicationsChasseFixe = lus.ApplicationsChasseFixe is null ? defauts.ApplicationsChasseFixe : lus.ApplicationsChasseFixe,
-            PlafondTemporaire = lus.PlafondTemporaire < 0 ? defauts.PlafondTemporaire : lus.PlafondTemporaire,
-            LargeurFenetre = lus.LargeurFenetre < LargeurMinimale ? defauts.LargeurFenetre : lus.LargeurFenetre,
-            HauteurFenetre = lus.HauteurFenetre < HauteurMinimale ? defauts.HauteurFenetre : lus.HauteurFenetre,
+            RaccourciSecours = Valeur(racine, nameof(Parametres.RaccourciSecours), defauts.RaccourciSecours, remplacees,
+                                      v => !string.IsNullOrWhiteSpace(v)),
+            DemarrageAvecWindows = Valeur(racine, nameof(Parametres.DemarrageAvecWindows), defauts.DemarrageAvecWindows, remplacees),
+            MiseEnFormeParDefaut = Valeur(racine, nameof(Parametres.MiseEnFormeParDefaut), defauts.MiseEnFormeParDefaut, remplacees),
+            PlafondTemporaire = Valeur(racine, nameof(Parametres.PlafondTemporaire), defauts.PlafondTemporaire, remplacees,
+                                       v => v >= 0),
+            Theme = Valeur(racine, nameof(Parametres.Theme), defauts.Theme, remplacees),
+            ApplicationsChasseFixe = ListeApplications(racine, defauts.ApplicationsChasseFixe, remplacees),
+            LargeurFenetre = Valeur(racine, nameof(Parametres.LargeurFenetre), defauts.LargeurFenetre, remplacees,
+                                    v => v >= LargeurMinimale),
+            HauteurFenetre = Valeur(racine, nameof(Parametres.HauteurFenetre), defauts.HauteurFenetre, remplacees,
+                                    v => v >= HauteurMinimale),
         };
 
-        if (!ReferenceEquals(corriges.ApplicationsChasseFixe, lus.ApplicationsChasseFixe)
-            || corriges.PlafondTemporaire != lus.PlafondTemporaire
-            || corriges.LargeurFenetre != lus.LargeurFenetre
-            || corriges.HauteurFenetre != lus.HauteurFenetre
-            || corriges.RaccourciSecours != lus.RaccourciSecours)
+        if (remplacees.Count > 0)
         {
-            _journal.Avertissement($"Valeurs de réglages inutilisables dans {_cheminFichier} : remplacées par les valeurs par défaut.");
+            _journal.Avertissement($"Réglages inutilisables dans {_cheminFichier}, corrigés un à un ({string.Join(" ; ", remplacees)}).");
         }
 
-        return corriges;
+        return lus;
+    }
+
+    // Les éléments null d'une liste écrite à la main (["Code", null]) sont écartés ; le reste de la liste est gardé.
+    private static IReadOnlyList<string> ListeApplications(JsonElement racine, IReadOnlyList<string> defaut, List<string> remplacees)
+    {
+        var lue = Valeur<List<string?>?>(racine, nameof(Parametres.ApplicationsChasseFixe), null, remplacees);
+        if (lue is null)
+        {
+            return defaut;
+        }
+
+        var propres = lue.OfType<string>().ToList();
+        if (propres.Count != lue.Count)
+        {
+            remplacees.Add($"{nameof(Parametres.ApplicationsChasseFixe)} : éléments null ignorés");
+        }
+
+        return propres;
+    }
+
+    // Valeur d'une propriété (nom cherché sans tenir compte de la casse, la dernière occurrence l'emporte comme dans
+    // System.Text.Json). Absente : le défaut, sans bruit. Présente mais inutilisable : le défaut, et le nom est noté.
+    private static T Valeur<T>(JsonElement racine, string nom, T defaut, List<string> remplacees, Func<T, bool>? estValide = null)
+    {
+        JsonElement? trouvee = null;
+        foreach (var propriete in racine.EnumerateObject())
+        {
+            if (propriete.Name.Equals(nom, StringComparison.OrdinalIgnoreCase))
+            {
+                trouvee = propriete.Value;
+            }
+        }
+
+        if (trouvee is null)
+        {
+            return defaut;
+        }
+
+        try
+        {
+            var valeur = trouvee.Value.Deserialize<T>(Options);
+            if (valeur is not null && (estValide?.Invoke(valeur) ?? true))
+            {
+                return valeur;
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        remplacees.Add($"{nom} : valeur par défaut");
+        return defaut;
     }
 
     private static void TenterSupprimer(string chemin)
