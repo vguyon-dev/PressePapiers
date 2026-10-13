@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PressePapiers.Coeur/PressePapiers.Coeur.csproj" />
+    <Project Path="src/PressePapiers/PressePapiers.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PressePapiers.Tests/PressePapiers.Tests.csproj" />
+  </Folder>
+</Solution>

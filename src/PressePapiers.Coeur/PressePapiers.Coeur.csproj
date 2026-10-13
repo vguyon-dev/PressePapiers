@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>PressePapiers.Coeur</RootNamespace>
+    <AssemblyName>PressePapiers.Coeur</AssemblyName>
+    <!-- La documentation XML des membres publics est exigée : un membre non documenté avertit (CS1591). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PressePapiers.Tests" />
+  </ItemGroup>
+
+</Project>
