@@ -10,7 +10,8 @@ namespace PressePapiers.Capture;
 /// <summary>
 /// Enregistre chaque copie détectée dans l'historique : relève l'application d'origine, lit le presse-papiers puis ajoute
 /// l'élément à Temporaire. Une seule capture à la fois ; une rafale de notifications pendant une capture ne provoque qu'une
-/// lecture de plus.
+/// lecture de plus. Une lecture en retard (propriétaire lent) relance d'elle-même une capture quand elle finit, pour que
+/// son résultat ne soit pas perdu.
 /// </summary>
 public sealed class ServiceCapture : IDisposable
 {
@@ -20,6 +21,7 @@ public sealed class ServiceCapture : IDisposable
     private readonly Func<Parametres> _parametres;
     private readonly IJournal _journal;
     private readonly ExecutionUnique _execution;
+    private readonly SynchronizationContext? _filInterface;
     private volatile string? _application;
     private volatile bool _libere;
 
@@ -43,7 +45,9 @@ public sealed class ServiceCapture : IDisposable
         _parametres = parametres;
         _journal = journal;
         _execution = new ExecutionUnique(CapturerAsync, exception => _journal.Erreur("Capture d'une copie en échec.", exception));
+        _filInterface = SynchronizationContext.Current;
         _relais.CopieDetectee += SurCopieDetectee;
+        _lecteur.RelectureDemandee += SurRelectureDemandee;
     }
 
     /// <summary>
@@ -56,6 +60,7 @@ public sealed class ServiceCapture : IDisposable
     {
         _libere = true;
         _relais.CopieDetectee -= SurCopieDetectee;
+        _lecteur.RelectureDemandee -= SurRelectureDemandee;
     }
 
     // L'origine est relevée tout de suite, avant que l'utilisateur ne change de fenêtre ; chaque notification la remplace,
@@ -69,6 +74,30 @@ public sealed class ServiceCapture : IDisposable
 
         _application = ApplicationOrigine.DeterminerPourCopie();
         _execution.Demander();
+    }
+
+    // Levé sur le fil de lecture : la capture est ramenée sur le fil d'interface, où ElementAjoute doit être levé.
+    // L'origine n'est pas relevée de nouveau : le lecteur livre le résultat tardif avec celle de sa propre copie.
+    private void SurRelectureDemandee()
+    {
+        if (_libere)
+        {
+            return;
+        }
+
+        if (_filInterface is null)
+        {
+            _execution.Demander();
+            return;
+        }
+
+        _filInterface.Post(_ =>
+        {
+            if (!_libere)
+            {
+                _execution.Demander();
+            }
+        }, null);
     }
 
     private async Task CapturerAsync()
