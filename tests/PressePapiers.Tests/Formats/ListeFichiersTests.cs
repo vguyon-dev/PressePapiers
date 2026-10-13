@@ -47,6 +47,21 @@ public sealed class ListeFichiersTests
     }
 
     [Fact]
+    public void Un_substitut_utf16_isole_est_conserve_a_l_encodage_et_au_decodage()
+    {
+        // NTFS accepte un nom avec un substitut seul : le remplacer par U+FFFD désignerait un autre fichier.
+        const string debutHaut = @"C:\dossier\a";
+        var haut = debutHaut + (char)0xD800 + "b.txt";
+        var bas = @"C:\dossier\c" + (char)0xDC00 + "d.txt";
+
+        var donnees = ListeFichiers.EncoderDropFiles([haut, bas]);
+
+        // D800 en petit-boutiste : octet faible d'abord, juste après les caractères du début du chemin.
+        Assert.Equal(new byte[] { 0x00, 0xD8 }, donnees.AsSpan(20 + 2 * debutHaut.Length, 2).ToArray());
+        Assert.Equal(new[] { haut, bas }, ListeFichiers.DecoderDropFiles(donnees));
+    }
+
+    [Fact]
     public void Un_chemin_vide_ou_avec_un_nul_est_refuse_a_l_encodage()
     {
         // Un chemin vide terminerait la liste trop tôt ; un nul interne couperait le chemin en deux.

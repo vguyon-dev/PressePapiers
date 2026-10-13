@@ -30,6 +30,7 @@ public sealed class DepotHistorique
     private readonly DossierDonnees _dossiers;
     private readonly TimeProvider _horloge;
     private readonly IJournal _journal;
+    private readonly FichiersImages _images;
 
     /// <summary>Crée le dépôt sur une base ouverte et y crée l'onglet Temporaire s'il n'existe pas encore.</summary>
     public DepotHistorique(BaseHistorique baseHistorique, DossierDonnees dossiers, TimeProvider horloge, IJournal journal)
@@ -44,6 +45,7 @@ public sealed class DepotHistorique
         _dossiers = dossiers;
         _horloge = horloge;
         _journal = journal;
+        _images = new FichiersImages(dossiers, journal);
         OngletTemporaire = LireOuCreerTemporaire();
     }
 
@@ -161,7 +163,7 @@ public sealed class DepotHistorique
                 transaction.Commit();
             }
 
-            SupprimerFichiersImages(images);
+            _images.Supprimer(images);
         }
 
         Notifier();
@@ -220,25 +222,57 @@ public sealed class DepotHistorique
     /// Ajoute une copie à Temporaire, écrit le PNG d'une image et renvoie l'élément créé ou remonté.
     /// Un contenu identique déjà présent dans Temporaire (même empreinte, même sorte de contenu) n'est pas copié :
     /// l'élément existant passe en tête et reçoit la nouvelle application d'origine, si elle est connue.
-    /// Le texte brut, avec ou sans mise en forme, est une seule sorte de contenu ; le premier enregistrement est gardé tel quel.
+    /// Le texte brut, avec ou sans mise en forme, est une seule sorte de contenu ; le premier enregistrement est gardé tel quel,
+    /// sauf s'il n'avait ni RTF ni HTML et que la nouvelle copie en apporte : ils sont alors enregistrés et l'élément devient
+    /// <see cref="TypeElement.MisEnForme"/>.
+    /// Pour un doublon remonté, l'élément renvoyé ne relit pas les gros contenus : son <see cref="Element.Texte"/> est celui
+    /// de la copie (identique par l'empreinte), ses <see cref="Element.Rtf"/> et <see cref="Element.Html"/> ne sont renseignés
+    /// que s'ils viennent d'être enregistrés ; <see cref="Lire"/> donne l'élément complet.
     /// </summary>
     /// <exception cref="ArgumentException">Le contenu principal du type demandé est absent.</exception>
     public Element AjouterCopie(ContenuCopie contenu)
     {
         ArgumentNullException.ThrowIfNull(contenu);
 
-        // Hors du verrou : hacher un gros contenu ne doit pas bloquer les autres opérations.
+        // Hors du verrou : hacher un gros contenu ou écrire un PNG ne doit pas bloquer les autres opérations.
         var empreinte = Empreinte.Calculer(contenu);
         var texte = contenu.Type == TypeElement.Fichiers ? string.Join('\n', contenu.Fichiers!) : contenu.Texte;
+        var imageFichier = contenu.Type == TypeElement.Image ? _images.Ecrire(contenu.ImagePng!) : null;
 
         Element resultat;
-        lock (_verrou)
+        try
         {
-            var maintenant = Maintenant();
-            var doublon = TrouverDoublon(empreinte, contenu.Type);
-            resultat = doublon is null
-                ? Inserer(contenu, empreinte, texte, maintenant)
-                : Remonter(doublon.Value, contenu.Application, maintenant);
+            lock (_verrou)
+            {
+                var maintenant = Maintenant();
+                var doublon = TrouverDoublon(empreinte, contenu.Type);
+                resultat = doublon is null
+                    ? Inserer(contenu, empreinte, texte, imageFichier, maintenant)
+                    : Remonter(doublon.Value, contenu, empreinte, texte, maintenant);
+            }
+
+            // Un doublon d'image garde son PNG d'origine : celui qu'on vient d'écrire ne sert à rien.
+            if (imageFichier is not null && resultat.ImageFichier != imageFichier)
+            {
+                _images.Supprimer([imageFichier]);
+            }
+        }
+        catch
+        {
+            // Le PNG est écrit avant la ligne : un échec de l'insertion retire le fichier, jamais l'inverse.
+            if (imageFichier is not null)
+            {
+                _images.Supprimer([imageFichier]);
+            }
+
+            throw;
+        }
+        finally
+        {
+            if (imageFichier is not null)
+            {
+                _images.Terminer(imageFichier);
+            }
         }
 
         Notifier();
@@ -314,7 +348,7 @@ public sealed class DepotHistorique
             supprime = Executer("DELETE FROM element WHERE id = $id", null, ("$id", elementId)) > 0;
             if (supprime && image is string nom)
             {
-                SupprimerFichiersImages([nom]);
+                _images.Supprimer([nom]);
             }
         }
 
@@ -354,7 +388,7 @@ public sealed class DepotHistorique
                 transaction.Commit();
             }
 
-            SupprimerFichiersImages(images);
+            _images.Supprimer(images);
         }
 
         if (supprimes > 0)
@@ -407,7 +441,7 @@ public sealed class DepotHistorique
                 transaction.Commit();
             }
 
-            SupprimerFichiersImages(images);
+            _images.Supprimer(images);
         }
 
         Notifier();
@@ -438,7 +472,10 @@ public sealed class DepotHistorique
         }
     }
 
-    /// <summary>Écrit une valeur dans la table <c>meta</c>, en remplaçant celle de la clé si elle existe.</summary>
+    /// <summary>
+    /// Écrit une valeur dans la table <c>meta</c>, en remplaçant celle de la clé si elle existe. Ne lève pas
+    /// <see cref="Modifie"/> : une valeur de <c>meta</c> n'a aucun effet visible dans les listes.
+    /// </summary>
     public void EcrireMeta(string cle, string valeur)
     {
         ArgumentException.ThrowIfNullOrEmpty(cle);
@@ -450,8 +487,31 @@ public sealed class DepotHistorique
                 "INSERT INTO meta (cle, valeur) VALUES ($cle, $valeur) ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur",
                 null, ("$cle", cle), ("$valeur", valeur));
         }
+    }
 
-        Notifier();
+    /// <summary>
+    /// Supprime du dossier des images les fichiers <c>.png</c> que plus aucun élément ne référence (reste d'un arrêt brutal
+    /// entre l'écriture d'un PNG et celle de sa ligne, d'une suppression de ligne dont le fichier était verrouillé...).
+    /// Ne touche à rien d'autre que des fichiers <c>.png</c> placés directement dans ce dossier ; les PNG en cours d'écriture
+    /// par une capture sont épargnés. À appeler au démarrage. Renvoie le nombre de fichiers supprimés ; chaque suppression
+    /// impossible est notée au journal et laissée pour la fois suivante.
+    /// </summary>
+    public int NettoyerImagesOrphelines()
+    {
+        lock (_verrou)
+        {
+            var references = new List<string>();
+            using (var commande = Preparer("SELECT image_fichier FROM element WHERE image_fichier IS NOT NULL", null))
+            using (var lecteur = commande.ExecuteReader())
+            {
+                while (lecteur.Read())
+                {
+                    references.Add(lecteur.GetString(0));
+                }
+            }
+
+            return _images.SupprimerOrphelines(references);
+        }
     }
 
     // ---- Onglets : lecture ----
@@ -564,85 +624,134 @@ public sealed class DepotHistorique
         return maintenant > derniere ? maintenant : derniere.AddTicks(1);
     }
 
-    private Element Inserer(ContenuCopie contenu, byte[] empreinte, string? texte, DateTimeOffset maintenant)
+    private Element Inserer(ContenuCopie contenu, byte[] empreinte, string? texte, string? imageFichier, DateTimeOffset maintenant)
     {
-        // Le PNG est écrit avant la ligne : un échec de l'insertion retire le fichier, jamais l'inverse.
-        string? imageFichier = null;
-        if (contenu.Type == TypeElement.Image)
+        var dateUsage = DateUsageSuivante(OngletTemporaire.Id, maintenant, null);
+        var taille = contenu.Type == TypeElement.Image ? contenu.ImagePng!.Length : Encoding.UTF8.GetByteCount(texte!);
+        var aMiseEnForme = contenu.Rtf is not null || contenu.Html is not null;
+        var nombreFichiers = contenu.Type == TypeElement.Fichiers ? texte!.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length : 0;
+
+        // Extrait, indicateur de mise en forme et nombre de chemins sont calculés ici une fois pour toutes : la liste
+        // les lit sans jamais toucher au texte complet.
+        Executer(
+            """
+            INSERT INTO element (onglet_id, nom, type, application, date_copie, date_usage, taille, empreinte, image_fichier,
+                                 a_mise_en_forme, nombre_fichiers, extrait, miniature, texte, texte_recherche, rtf, html)
+            VALUES ($onglet, NULL, $type, $application, $copie, $usage, $taille, $empreinte, $image,
+                    $miseEnForme, $nombreFichiers, $extrait, $miniature, $texte, $recherche, $rtf, $html)
+            """,
+            null,
+            ("$onglet", OngletTemporaire.Id), ("$type", (int)contenu.Type), ("$application", contenu.Application),
+            ("$copie", EnTexte(maintenant)), ("$usage", EnTexte(dateUsage)), ("$taille", taille),
+            ("$empreinte", empreinte), ("$image", imageFichier),
+            ("$miseEnForme", aMiseEnForme ? 1 : 0), ("$nombreFichiers", nombreFichiers),
+            ("$extrait", ExtraitTexte.Calculer(texte)), ("$miniature", contenu.Miniature),
+            ("$texte", texte), ("$recherche", TexteRecherche(null, contenu.Type, texte, contenu.Application)),
+            ("$rtf", contenu.Rtf), ("$html", contenu.Html));
+        var id = Convert.ToInt64(Scalaire("SELECT last_insert_rowid()", null), CultureInfo.InvariantCulture);
+
+        return new Element
         {
-            Directory.CreateDirectory(_dossiers.Images);
-            imageFichier = Guid.NewGuid().ToString("N") + ".png";
-            File.WriteAllBytes(Path.Combine(_dossiers.Images, imageFichier), contenu.ImagePng!);
-        }
-
-        try
-        {
-            var dateUsage = DateUsageSuivante(OngletTemporaire.Id, maintenant, null);
-            var taille = contenu.Type == TypeElement.Image ? contenu.ImagePng!.Length : Encoding.UTF8.GetByteCount(texte!);
-
-            Executer(
-                """
-                INSERT INTO element (onglet_id, nom, type, texte, texte_recherche, rtf, html, image_fichier, miniature,
-                                     empreinte, application, date_copie, date_usage, taille)
-                VALUES ($onglet, NULL, $type, $texte, $recherche, $rtf, $html, $image, $miniature,
-                        $empreinte, $application, $copie, $usage, $taille)
-                """,
-                null,
-                ("$onglet", OngletTemporaire.Id), ("$type", (int)contenu.Type), ("$texte", texte),
-                ("$recherche", TexteRecherche(null, contenu.Type, texte, contenu.Application)),
-                ("$rtf", contenu.Rtf), ("$html", contenu.Html), ("$image", imageFichier), ("$miniature", contenu.Miniature),
-                ("$empreinte", empreinte), ("$application", contenu.Application),
-                ("$copie", EnTexte(maintenant)), ("$usage", EnTexte(dateUsage)), ("$taille", taille));
-            var id = Convert.ToInt64(Scalaire("SELECT last_insert_rowid()", null), CultureInfo.InvariantCulture);
-
-            return new Element
-            {
-                Id = id,
-                OngletId = OngletTemporaire.Id,
-                Type = contenu.Type,
-                Texte = texte,
-                Rtf = contenu.Rtf,
-                Html = contenu.Html,
-                ImageFichier = imageFichier,
-                Miniature = contenu.Miniature,
-                Empreinte = empreinte,
-                Application = contenu.Application,
-                DateCopie = maintenant,
-                DateUsage = dateUsage,
-                Taille = taille,
-            };
-        }
-        catch
-        {
-            if (imageFichier is not null)
-            {
-                SupprimerFichiersImages([imageFichier]);
-            }
-
-            throw;
-        }
+            Id = id,
+            OngletId = OngletTemporaire.Id,
+            Type = contenu.Type,
+            Texte = texte,
+            Rtf = contenu.Rtf,
+            Html = contenu.Html,
+            ImageFichier = imageFichier,
+            Miniature = contenu.Miniature,
+            Empreinte = empreinte,
+            Application = contenu.Application,
+            DateCopie = maintenant,
+            DateUsage = dateUsage,
+            Taille = taille,
+        };
     }
 
-    // Un doublon n'est pas recopié : sa date d'usage avance, et son application d'origine est remplacée si la nouvelle est connue.
-    // Le texte de recherche porte l'application, il est donc recalculé avec elle.
-    private Element Remonter(long id, string? application, DateTimeOffset maintenant)
-    {
-        var courant = LireElement(id)!;
-        var dateUsage = DateUsageSuivante(courant.OngletId, maintenant, null);
+    // Ce que la remontée d'un doublon lit de la ligne existante : des colonnes courtes seulement, jamais le texte, le RTF ni le HTML.
+    private readonly record struct Existant(
+        long OngletId, string? Nom, TypeElement Type, string? Application, string? ImageFichier, byte[]? Miniature,
+        DateTimeOffset DateCopie, long Taille, bool AMiseEnForme);
 
-        if (application is null || application == courant.Application)
+    private Existant LireExistant(long id)
+    {
+        using var commande = Preparer(
+            """
+            SELECT onglet_id, nom, type, application, image_fichier, miniature, date_copie, taille, rtf IS NOT NULL OR html IS NOT NULL
+            FROM element WHERE id = $id
+            """,
+            null, ("$id", id));
+        using var lecteur = commande.ExecuteReader();
+        lecteur.Read();
+        return new Existant(
+            lecteur.GetInt64(0),
+            lecteur.IsDBNull(1) ? null : lecteur.GetString(1),
+            (TypeElement)lecteur.GetInt32(2),
+            lecteur.IsDBNull(3) ? null : lecteur.GetString(3),
+            lecteur.IsDBNull(4) ? null : lecteur.GetString(4),
+            lecteur.IsDBNull(5) ? null : lecteur.GetFieldValue<byte[]>(5),
+            DateTimeOffset.ParseExact(lecteur.GetString(6), "O", CultureInfo.InvariantCulture),
+            lecteur.GetInt64(7),
+            lecteur.GetInt32(8) != 0);
+    }
+
+    // Un doublon n'est pas recopié : sa date d'usage avance, son application d'origine est remplacée si la nouvelle est
+    // connue (le texte de recherche porte l'application, il est donc recalculé), et la mise en forme de la nouvelle copie
+    // est gardée si l'élément n'en avait pas. Le texte de la copie est identique à celui de l'élément (même empreinte) :
+    // on s'en sert au lieu de relire la base.
+    private Element Remonter(long id, ContenuCopie contenu, byte[] empreinte, string? texte, DateTimeOffset maintenant)
+    {
+        var existant = LireExistant(id);
+        var dateUsage = DateUsageSuivante(existant.OngletId, maintenant, null);
+        var application = contenu.Application ?? existant.Application;
+        var changeApplication = application != existant.Application;
+        var gagneMiseEnForme = !existant.AMiseEnForme
+            && existant.Type is TypeElement.Texte or TypeElement.MisEnForme
+            && (contenu.Rtf is not null || contenu.Html is not null);
+        var type = gagneMiseEnForme ? TypeElement.MisEnForme : existant.Type;
+
+        // Les morceaux de SET sont des textes écrits ici ; les valeurs passent par des paramètres. Sans changement de
+        // texte de recherche, le déclencheur de l'index ne réindexe pas un gros texte pour une simple date.
+        var champs = new List<string> { "date_usage = $usage" };
+        var parametres = new List<(string Nom, object? Valeur)> { ("$id", id), ("$usage", EnTexte(dateUsage)) };
+        if (changeApplication)
         {
-            // Le texte de recherche n'est pas touché : le déclencheur de l'index ne réindexe pas un gros texte pour une date.
-            Executer("UPDATE element SET date_usage = $usage WHERE id = $id", null, ("$usage", EnTexte(dateUsage)), ("$id", id));
-            return courant with { DateUsage = dateUsage };
+            champs.Add("application = $application");
+            champs.Add("texte_recherche = $recherche");
+            parametres.Add(("$application", application));
+            parametres.Add(("$recherche", TexteRecherche(existant.Nom, existant.Type, texte, application)));
         }
 
-        Executer(
-            "UPDATE element SET date_usage = $usage, application = $application, texte_recherche = $recherche WHERE id = $id",
-            null,
-            ("$usage", EnTexte(dateUsage)), ("$application", application), ("$id", id),
-            ("$recherche", TexteRecherche(courant.Nom, courant.Type, courant.Texte, application)));
-        return courant with { DateUsage = dateUsage, Application = application };
+        if (gagneMiseEnForme)
+        {
+            champs.Add("type = $type");
+            champs.Add("a_mise_en_forme = 1");
+            champs.Add("rtf = $rtf");
+            champs.Add("html = $html");
+            parametres.Add(("$type", (int)type));
+            parametres.Add(("$rtf", contenu.Rtf));
+            parametres.Add(("$html", contenu.Html));
+        }
+
+        Executer($"UPDATE element SET {string.Join(", ", champs)} WHERE id = $id", null, [.. parametres]);
+
+        return new Element
+        {
+            Id = id,
+            OngletId = existant.OngletId,
+            Nom = existant.Nom,
+            Type = type,
+            Texte = texte,
+            Rtf = gagneMiseEnForme ? contenu.Rtf : null,
+            Html = gagneMiseEnForme ? contenu.Html : null,
+            ImageFichier = existant.ImageFichier,
+            Miniature = existant.Miniature,
+            Empreinte = empreinte,
+            Application = application,
+            DateCopie = existant.DateCopie,
+            DateUsage = dateUsage,
+            Taille = existant.Taille,
+        };
     }
 
     // Pour une liste de fichiers, le texte est la liste des chemins : on la passe comme telle, pas aussi comme texte.
@@ -669,32 +778,6 @@ public sealed class DepotHistorique
         }
 
         return Executer("DELETE FROM element WHERE onglet_id = $onglet", transaction, ("$onglet", ongletId));
-    }
-
-    // Un PNG déjà absent n'est pas une erreur ; un PNG verrouillé est noté au journal et laissé en place.
-    private void SupprimerFichiersImages(IEnumerable<string> noms)
-    {
-        foreach (var nom in noms)
-        {
-            if (string.IsNullOrEmpty(nom))
-            {
-                continue;
-            }
-
-            // GetFileName écarte tout chemin qu'une base abîmée aurait pu y mettre : on ne supprime que dans le dossier des images.
-            var chemin = Path.Combine(_dossiers.Images, Path.GetFileName(nom));
-            try
-            {
-                File.Delete(chemin);
-            }
-            catch (DirectoryNotFoundException)
-            {
-            }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-            {
-                _journal.Avertissement($"Image non supprimée : {chemin}", exception);
-            }
-        }
     }
 
     // ---- Événement et accès SQL ----

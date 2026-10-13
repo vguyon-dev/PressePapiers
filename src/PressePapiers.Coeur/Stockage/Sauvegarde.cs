@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
+using PressePapiers.Coeur.Journalisation;
 
 namespace PressePapiers.Coeur.Stockage;
 
@@ -16,15 +17,18 @@ public static class Sauvegarde
     /// <summary>
     /// Copie la base dans <paramref name="dossierSauvegardes"/> (<c>historique-AAAAMMJJ-HHmmss.db</c>, heure UTC) puis garde les
     /// <paramref name="nombreGarde"/> plus récentes, celle qui vient d'être créée comprise. Renvoie le chemin créé, ou null
-    /// s'il n'y a pas de base (fichier absent ou vide). Une base illisible lève <see cref="SqliteException"/> :
-    /// aucune copie n'est alors créée et la rotation ne supprime rien, pour que les bonnes copies survivent à une base abîmée.
+    /// s'il n'y a pas de base (fichier absent ou vide) ou si la copie échoue au contrôle <c>PRAGMA quick_check</c> : elle est
+    /// alors jetée, notée au journal, et la rotation ne supprime rien, pour que les anciennes copies saines survivent.
+    /// Une base illisible lève <see cref="SqliteException"/> : aucune copie n'est créée et la rotation ne supprime rien non plus.
     /// </summary>
     /// <param name="cheminBase">Fichier de la base, ouverte ou non.</param>
     /// <param name="dossierSauvegardes">Dossier des copies, créé au besoin.</param>
     /// <param name="horloge">Source de l'heure du nom.</param>
     /// <param name="nombreGarde">Nombre de copies gardées, au moins 1.</param>
+    /// <param name="journal">Reçoit l'avertissement d'une copie jetée ; aucun journal par défaut.</param>
     /// <exception cref="SqliteException">Le fichier n'est pas une base SQLite lisible.</exception>
-    public static string? Creer(string cheminBase, string dossierSauvegardes, TimeProvider horloge, int nombreGarde = 3)
+    public static string? Creer(string cheminBase, string dossierSauvegardes, TimeProvider horloge, int nombreGarde = 3,
+                                IJournal? journal = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cheminBase);
         ArgumentException.ThrowIfNullOrWhiteSpace(dossierSauvegardes);
@@ -46,6 +50,16 @@ public static class Sauvegarde
         try
         {
             Copier(cheminBase, provisoire);
+            var anomalie = ControlerCopie(provisoire);
+            if (anomalie is not null)
+            {
+                // Une copie abîmée ne doit ni prendre la place d'une bonne ni déclencher la suppression des anciennes.
+                SupprimerSansBruit(provisoire);
+                (journal ?? JournalNul.Instance).Avertissement(
+                    $"Copie de sécurité jetée : le contrôle d'intégrité de la copie a échoué ({anomalie}). Les copies précédentes sont gardées.");
+                return null;
+            }
+
             File.Move(provisoire, chemin, overwrite: true);
         }
         catch
@@ -70,7 +84,9 @@ public static class Sauvegarde
     /// <summary>
     /// Remplace la base par une copie. La base doit être fermée. Les fichiers <c>-wal</c> et <c>-shm</c> de l'ancienne base
     /// sont supprimés : appliqués à la base restaurée, ils la corrompraient. La copie est d'abord posée à côté de la base,
-    /// puis mise en place d'un seul geste ; si quelque chose échoue (base encore ouverte), la base actuelle est laissée telle quelle.
+    /// les deux fichiers annexes sont renommés (ce qui échoue tout de suite si la base est encore ouverte), la copie est mise
+    /// en place d'un seul geste, puis les fichiers renommés sont supprimés. Si quelque chose échoue, la base actuelle et ses
+    /// fichiers annexes sont laissés tels quels.
     /// </summary>
     /// <exception cref="FileNotFoundException">La copie n'existe pas.</exception>
     public static void Restaurer(string cheminSauvegarde, string cheminBase)
@@ -86,16 +102,70 @@ public static class Sauvegarde
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(cheminBase))!);
         var provisoire = cheminBase + ".restauration";
         File.Copy(cheminSauvegarde, provisoire, overwrite: true);
+        var ecartes = new List<(string Origine, string Ecarte)>();
         try
         {
-            File.Delete(cheminBase + "-wal");
-            File.Delete(cheminBase + "-shm");
+            foreach (var suffixe in new[] { "-wal", "-shm" })
+            {
+                var origine = cheminBase + suffixe;
+                if (File.Exists(origine))
+                {
+                    var ecarte = origine + ".avant-restauration";
+                    File.Move(origine, ecarte, overwrite: true);
+                    ecartes.Add((origine, ecarte));
+                }
+            }
+
             File.Move(provisoire, cheminBase, overwrite: true);
         }
         catch
         {
             SupprimerSansBruit(provisoire);
+            foreach (var (origine, ecarte) in ecartes)
+            {
+                RemettreEnPlace(ecarte, origine);
+            }
+
             throw;
+        }
+
+        foreach (var (_, ecarte) in ecartes)
+        {
+            SupprimerSansBruit(ecarte);
+        }
+    }
+
+    // Contrôle rapide d'intégrité de la copie (en lecture écriture : fermée en dernier, la connexion retire les fichiers -wal et -shm
+    // de la copie, qu'une connexion en lecture seule laisserait à côté). Renvoie null si tout va bien,
+    // sinon un résumé de l'anomalie (premier message de SQLite, ou l'exception qui a empêché le contrôle).
+    private static string? ControlerCopie(string chemin)
+    {
+        var chaine = new SqliteConnectionStringBuilder { DataSource = chemin, Mode = SqliteOpenMode.ReadWrite, Pooling = false }.ToString();
+        try
+        {
+            using var connexion = new SqliteConnection(chaine);
+            connexion.Open();
+            using var commande = connexion.CreateCommand();
+            commande.CommandText = "PRAGMA quick_check";
+            using var lecteur = commande.ExecuteReader();
+            var premier = lecteur.Read() ? lecteur.GetString(0) : "aucun résultat";
+            return premier == "ok" ? null : premier;
+        }
+        catch (SqliteException exception)
+        {
+            return exception.Message;
+        }
+    }
+
+    // Remet un fichier annexe à sa place après un échec ; si même cela échoue, le fichier reste sous son nom d'attente.
+    private static void RemettreEnPlace(string ecarte, string origine)
+    {
+        try
+        {
+            File.Move(ecarte, origine, overwrite: true);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
         }
     }
 

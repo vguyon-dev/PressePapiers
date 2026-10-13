@@ -59,7 +59,7 @@ public sealed class DepotMetaTests : IDisposable
     [Fact]
     public void La_version_du_schema_ecrite_a_la_creation_se_lit()
     {
-        Assert.Equal("1", Depot.LireMeta("schema.version"));
+        Assert.Equal("2", Depot.LireMeta("schema.version"));
     }
 
     [Fact]
@@ -94,15 +94,16 @@ public sealed class DepotMetaTests : IDisposable
     }
 
     [Fact]
-    public void Ecrire_une_valeur_leve_Modifie_et_la_lire_non()
+    public void Ecrire_une_valeur_ne_leve_pas_Modifie_car_aucune_liste_n_en_est_changee()
     {
         var appels = 0;
         Depot.Modifie += () => appels++;
 
         Depot.EcrireMeta("cle", "valeur");
-        Assert.Equal(1, appels);
-
+        Depot.EcrireMeta("cle", "autre");
         _ = Depot.LireMeta("cle");
-        Assert.Equal(1, appels);
+
+        Assert.Equal(0, appels);
+        Assert.Equal("autre", Depot.LireMeta("cle"));
     }
 }

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace PressePapiers.Coeur.Formats;
@@ -12,7 +13,10 @@ public static class ListeFichiers
 {
     private const int TailleEnTete = 20;
 
-    /// <summary>Encode des chemins en structure DROPFILES, chemins en UTF-16.</summary>
+    /// <summary>
+    /// Encode des chemins en structure DROPFILES, chemins en UTF-16. Les unités UTF-16 sont écrites telles quelles : NTFS
+    /// accepte un substitut isolé dans un nom de fichier, et le remplacer par U+FFFD désignerait un autre fichier.
+    /// </summary>
     /// <param name="chemins">Chemins complets, sans chemin vide ni caractère nul.</param>
     /// <exception cref="ArgumentException">Un chemin est vide ou contient un nul : il casserait le découpage de la liste.</exception>
     public static byte[] EncoderDropFiles(IReadOnlyList<string> chemins)
@@ -28,11 +32,10 @@ public static class ListeFichiers
 
         // Liste vide : deux nuls quand même, pour que la structure reste un double nul valide pour les lecteurs.
         var texte = chemins.Count == 0 ? "\0\0" : string.Concat(chemins.Select(c => c + "\0")) + "\0";
-        var corps = Encoding.Unicode.GetBytes(texte);
-        var donnees = new byte[TailleEnTete + corps.Length];
+        var donnees = new byte[TailleEnTete + texte.Length * sizeof(char)];
         BinaryPrimitives.WriteUInt32LittleEndian(donnees, TailleEnTete);          // pFiles
         BinaryPrimitives.WriteInt32LittleEndian(donnees.AsSpan(16), 1);            // fWide : chemins en UTF-16
-        corps.CopyTo(donnees, TailleEnTete);
+        MemoryMarshal.AsBytes(texte.AsSpan()).CopyTo(donnees.AsSpan(TailleEnTete)); // Windows est petit-boutiste, comme DROPFILES
         return donnees;
     }
 
@@ -77,11 +80,19 @@ public static class ListeFichiers
                 break;   // chemin vide : fin de liste (le double nul)
             }
 
-            chemins.Add(Encoding.Unicode.GetString(corps[debutChemin..i]));
+            chemins.Add(TexteUtf16(corps[debutChemin..i]));
             debutChemin = i + 2;
         }
 
         return chemins;
+    }
+
+    // Copie les unités UTF-16 sans les interpréter (Encoding.Unicode remplacerait un substitut isolé par U+FFFD).
+    private static string TexteUtf16(ReadOnlySpan<byte> octets)
+    {
+        var unites = new char[octets.Length / sizeof(char)];
+        octets.CopyTo(MemoryMarshal.AsBytes(unites.AsSpan()));
+        return new string(unites);
     }
 
     private static List<string> DecoderAnsi(ReadOnlySpan<byte> corps)

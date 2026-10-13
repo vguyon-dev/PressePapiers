@@ -96,16 +96,45 @@ public sealed class ServiceParametresTests : IDisposable
     }
 
     [Fact]
-    public void Enregistrer_remplace_le_fichier_existant_et_un_ancien_temporaire_est_ecrase()
+    public void Enregistrer_remplace_le_fichier_existant_sans_rien_laisser_a_cote()
     {
         var service = Creer();
         service.Enregistrer(new Parametres { PlafondTemporaire = 1 });
-        File.WriteAllText(Chemin + ".tmp", "reste d'une coupure");
 
         service.Enregistrer(new Parametres { PlafondTemporaire = 2 });
 
         Assert.Equal(2, service.Charger().PlafondTemporaire);
-        Assert.False(File.Exists(Chemin + ".tmp"));
+        Assert.Equal([Chemin], Directory.GetFiles(_dossier.Chemin));
+    }
+
+    [Fact]
+    public void Un_ancien_temporaire_verrouille_n_empeche_pas_d_enregistrer()
+    {
+        var service = Creer();
+        Directory.CreateDirectory(_dossier.Chemin);
+
+        // Un reste de coupure sous l'ancien nom fixe, tenu ouvert : un nom de fichier temporaire unique l'ignore.
+        using (new FileStream(Chemin + ".tmp", FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+        {
+            service.Enregistrer(new Parametres { PlafondTemporaire = 9 });
+        }
+
+        Assert.Equal(9, service.Charger().PlafondTemporaire);
+    }
+
+    [Fact]
+    public void Deux_enregistrements_simultanes_ne_se_genent_pas_et_laissent_un_fichier_valide()
+    {
+        var service = Creer();
+        service.Enregistrer(new Parametres());
+
+        // Avec un seul nom de fichier temporaire, deux écritures en même temps se heurteraient (partage refusé ou fichier mélangé).
+        Parallel.For(0, 200, new ParallelOptions { MaxDegreeOfParallelism = 8 },
+                     i => service.Enregistrer(new Parametres { PlafondTemporaire = i + 1 }));
+
+        Assert.Equal([Chemin], Directory.GetFiles(_dossier.Chemin));
+        Assert.Empty(_journal.Avertissements);
+        Assert.InRange(service.Charger().PlafondTemporaire, 1, 200);
     }
 
     [Fact]
@@ -120,7 +149,7 @@ public sealed class ServiceParametresTests : IDisposable
             Assert.ThrowsAny<Exception>(() => service.Enregistrer(new Parametres { PlafondTemporaire = 8 }));
         }
 
-        Assert.False(File.Exists(Chemin + ".tmp"));
+        Assert.Equal([Chemin], Directory.GetFiles(_dossier.Chemin));
         Assert.Equal(7, service.Charger().PlafondTemporaire);
     }
 
@@ -226,6 +255,62 @@ public sealed class ServiceParametresTests : IDisposable
         Assert.Equal(5000, parametres.PlafondTemporaire);
         Assert.Equal(920, parametres.LargeurFenetre);
         Assert.Equal(560, parametres.HauteurFenetre);
+        Assert.Single(_journal.Avertissements);
+    }
+
+    [Fact]
+    public void Une_valeur_inconnue_ne_fait_perdre_que_sa_propre_propriete()
+    {
+        File.WriteAllText(Chemin, """
+            {
+              "Theme": "Rose",
+              "PlafondTemporaire": 123,
+              "RaccourciSecours": "Ctrl+Alt+K",
+              "DemarrageAvecWindows": false,
+              "MiseEnFormeParDefaut": "MiseEnForme",
+              "LargeurFenetre": 1000
+            }
+            """);
+
+        var parametres = Creer().Charger();
+
+        Assert.Equal(ThemeApplication.Systeme, parametres.Theme);
+        Assert.Equal(123, parametres.PlafondTemporaire);
+        Assert.Equal("Ctrl+Alt+K", parametres.RaccourciSecours);
+        Assert.False(parametres.DemarrageAvecWindows);
+        Assert.Equal(1000, parametres.LargeurFenetre);
+        var avertissement = Assert.Single(_journal.Avertissements);
+        Assert.Contains("Theme", avertissement);
+        Assert.DoesNotContain("PlafondTemporaire", avertissement);
+    }
+
+    [Theory]
+    [InlineData("{\"Theme\": 1, \"LargeurFenetre\": 700}", 700)]
+    [InlineData("{\"MiseEnFormeParDefaut\": 9, \"LargeurFenetre\": 700}", 700)]
+    [InlineData("{\"DemarrageAvecWindows\": \"oui\", \"LargeurFenetre\": 700}", 700)]
+    [InlineData("{\"PlafondTemporaire\": \"beaucoup\", \"LargeurFenetre\": 700}", 700)]
+    [InlineData("{\"ApplicationsChasseFixe\": \"Code\", \"LargeurFenetre\": 700}", 700)]
+    [InlineData("{\"HauteurFenetre\": null, \"LargeurFenetre\": 700}", 700)]
+    public void Chaque_sorte_de_valeur_invalide_laisse_les_autres_reglages_intacts(string contenu, int largeur)
+    {
+        File.WriteAllText(Chemin, contenu);
+
+        var parametres = Creer().Charger();
+
+        Assert.Equal(largeur, parametres.LargeurFenetre);
+        Assert.Equal(new Parametres().HauteurFenetre, parametres.HauteurFenetre);
+        Assert.Equal(new Parametres().Theme, parametres.Theme);
+        Assert.Single(_journal.Avertissements);
+    }
+
+    [Fact]
+    public void Les_elements_null_de_la_liste_des_applications_sont_ecartes_et_le_reste_garde()
+    {
+        File.WriteAllText(Chemin, "{ \"ApplicationsChasseFixe\": [\"Code\", null, \"cmd\", null] }");
+
+        var parametres = Creer().Charger();
+
+        Assert.Equal(["Code", "cmd"], parametres.ApplicationsChasseFixe);
         Assert.Single(_journal.Avertissements);
     }
 

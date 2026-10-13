@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using PressePapiers.Coeur.Modele;
 using PressePapiers.Coeur.Recherche;
+using PressePapiers.Coeur.Stockage;
 using PressePapiers.Tests.Outils;
 
 namespace PressePapiers.Tests.Stockage;
@@ -62,25 +63,49 @@ public sealed class ResumesTests : IDisposable
     }
 
     [Fact]
-    public void L_extrait_est_coupe_a_2000_caracteres()
+    public void L_extrait_est_coupe_a_la_longueur_maximale()
     {
         Depot.AjouterCopie(ContenusDeTest.Texte(new string('x', 5000)));
 
         var resume = Assert.Single(Depot.ListerResumes(Temporaire));
 
-        Assert.Equal(2000, resume.Extrait!.Length);
-        Assert.Equal(new string('x', 2000), resume.Extrait);
+        Assert.Equal(500, ElementResume.LongueurMaxExtrait);
+        Assert.Equal(new string('x', 500), resume.Extrait);
+    }
+
+    [Fact]
+    public void L_extrait_ne_coupe_jamais_une_paire_de_substituts()
+    {
+        // Un emoji compte pour un caractère et occupe deux unités UTF-16 : couper au 500e char en couperait un en deux.
+        var texte = new string('a', 499) + char.ConvertFromUtf32(0x1F600) + "fin";
+        Depot.AjouterCopie(ContenusDeTest.Texte(texte));
+
+        var extrait = Assert.Single(Depot.ListerResumes(Temporaire)).Extrait!;
+
+        Assert.Equal(new string('a', 499) + char.ConvertFromUtf32(0x1F600), extrait);
+    }
+
+    [Fact]
+    public void Les_colonnes_du_resume_ne_comprennent_aucun_gros_contenu()
+    {
+        var colonnes = LecteurElement.ColonnesResume;
+
+        Assert.Contains("extrait", colonnes);
+        Assert.DoesNotContain("substr", colonnes);
+        Assert.DoesNotContain("texte", colonnes);
+        Assert.DoesNotContain("rtf", colonnes);
+        Assert.DoesNotContain("html", colonnes);
     }
 
     [Fact]
     public void Un_texte_court_est_garde_en_entier_et_un_texte_absent_donne_un_extrait_nul()
     {
-        Depot.AjouterCopie(ContenusDeTest.Texte(new string('y', 2000)));
+        Depot.AjouterCopie(ContenusDeTest.Texte(new string('y', ElementResume.LongueurMaxExtrait)));
         Depot.AjouterCopie(ContenusDeTest.Image(ContenusDeTest.Png(1)));
 
         var resumes = Depot.ListerResumes(Temporaire);
 
-        Assert.Contains(resumes, r => r.Type == TypeElement.Texte && r.Extrait!.Length == 2000);
+        Assert.Contains(resumes, r => r.Type == TypeElement.Texte && r.Extrait!.Length == ElementResume.LongueurMaxExtrait);
         Assert.Contains(resumes, r => r.Type == TypeElement.Image && r.Extrait is null);
     }
 
@@ -193,7 +218,7 @@ public sealed class ResumesTests : IDisposable
         var deux = _moteur.ChercherResumes("commun", 2);
 
         Assert.Equal(2, deux.Count);
-        Assert.All(deux, r => Assert.Equal(2000, r.Extrait!.Length));
+        Assert.All(deux, r => Assert.Equal(ElementResume.LongueurMaxExtrait, r.Extrait!.Length));
         Assert.Equal(Depot.ListerElements(Temporaire).Take(2).Select(e => e.Id), deux.Select(r => r.Id));
     }
 
@@ -276,8 +301,8 @@ public sealed class ResumesTests : IDisposable
         using var commande = _depotDeTest.Connexion.CreateCommand();
         commande.Transaction = transaction;
         commande.CommandText = """
-            INSERT INTO element (onglet_id, type, texte, texte_recherche, empreinte, date_copie, date_usage, taille)
-            VALUES ($onglet, 1, $texte, $recherche, $empreinte, $date, $date, $taille)
+            INSERT INTO element (onglet_id, type, extrait, texte, texte_recherche, empreinte, date_copie, date_usage, taille)
+            VALUES ($onglet, 1, substr($texte, 1, 500), $texte, $recherche, $empreinte, $date, $date, $taille)
             """;
         commande.Parameters.AddWithValue("$onglet", onglet);
         var pTexte = commande.Parameters.AddWithValue("$texte", bloc);

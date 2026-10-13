@@ -11,8 +11,11 @@ public sealed class BaseHistorique : IDisposable
     /// <summary>Clé de <c>meta</c> qui porte la version du schéma, pour les migrations futures.</summary>
     internal const string CleVersionSchema = "schema.version";
 
-    /// <summary>Version du schéma créé par cette version de l'application.</summary>
-    internal const string VersionSchema = "1";
+    /// <summary>Numéro du schéma créé par cette version de l'application (2 : petites colonnes d'abord, extrait calculé).</summary>
+    internal const int NumeroVersionSchema = 2;
+
+    /// <summary>Version du schéma telle qu'elle est écrite dans <c>meta</c>.</summary>
+    internal static readonly string VersionSchema = NumeroVersionSchema.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>Première version de SQLite qui connaît le tokenizer <c>trigram</c>.</summary>
     internal static readonly Version VersionMinimale = new(3, 34, 0);
@@ -31,9 +34,11 @@ public sealed class BaseHistorique : IDisposable
 
     /// <summary>
     /// Ouvre ou crée la base : schéma de la spec (section 5), <c>journal_mode=WAL</c>, <c>foreign_keys=ON</c>.
+    /// Une base de version 1 est migrée vers la version 2 (une transaction, tout ou rien) ; une base d'une version plus
+    /// récente que celle que cette application connaît est refusée, sans y toucher.
     /// </summary>
     /// <param name="cheminFichier">Chemin du fichier de base ; le dossier doit exister.</param>
-    /// <exception cref="BaseIncompatibleException">SQLite inférieure à 3.34.0, ou FTS5 absent.</exception>
+    /// <exception cref="BaseIncompatibleException">SQLite inférieure à 3.34.0, FTS5 absent, ou base créée par une version plus récente.</exception>
     /// <exception cref="SqliteException">Le fichier n'est pas une base SQLite, ou n'est pas lisible.</exception>
     public static BaseHistorique Ouvrir(string cheminFichier)
     {
@@ -57,7 +62,7 @@ public sealed class BaseHistorique : IDisposable
 
             Executer(connexion, "PRAGMA journal_mode = WAL");
             Executer(connexion, "PRAGMA foreign_keys = ON");
-            CreerSchema(connexion);
+            PreparerSchema(connexion);
             return new BaseHistorique(connexion, version);
         }
         catch
@@ -93,6 +98,43 @@ public sealed class BaseHistorique : IDisposable
             throw new BaseIncompatibleException(
                 $"La SQLite embarquée ne gère pas l'index de recherche FTS5 avec trigrammes : {exception.Message}");
         }
+    }
+
+    // Crée le schéma d'une base neuve, migre une base ancienne, refuse une base plus récente que l'application.
+    private static void PreparerSchema(SqliteConnection connexion)
+    {
+        var version = LireVersionSchema(connexion);
+        if (version > NumeroVersionSchema)
+        {
+            throw new BaseIncompatibleException(
+                $"La base de l'historique a été créée par une version plus récente de PressePapiers (schéma {version}, "
+                + $"alors que cette version ne connaît que le schéma {NumeroVersionSchema}). "
+                + "Installez la dernière version de PressePapiers : la base n'a pas été modifiée.");
+        }
+
+        if (version == 1)
+        {
+            MigrationSchema.DeVersion1(connexion);
+        }
+
+        CreerSchema(connexion);
+    }
+
+    // Null pour une base neuve. Une base sans clé de version mais avec une table element est une base du premier schéma.
+    private static int? LireVersionSchema(SqliteConnection connexion)
+    {
+        if (Scalaire(connexion, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'meta'") != "0")
+        {
+            var valeur = Scalaire(connexion, $"SELECT valeur FROM meta WHERE cle = '{CleVersionSchema}'");
+            if (valeur.Length > 0)
+            {
+                return int.TryParse(valeur, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var numero) && numero >= 1
+                    ? numero
+                    : throw new BaseIncompatibleException($"Le numéro de schéma de la base de l'historique est illisible (« {valeur} »).");
+            }
+        }
+
+        return Scalaire(connexion, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'element'") != "0" ? 1 : null;
     }
 
     private static void CreerSchema(SqliteConnection connexion)

@@ -7,8 +7,11 @@ namespace PressePapiers.Coeur.Modele;
 /// </summary>
 public sealed record ElementResume
 {
-    /// <summary>Nombre maximal de caractères de <see cref="Extrait"/>.</summary>
-    public const int LongueurMaxExtrait = 2000;
+    /// <summary>
+    /// Nombre maximal de caractères Unicode de <see cref="Extrait"/> (un emoji compte pour un). L'extrait est calculé et
+    /// stocké à l'écriture : plus il est court, moins la liste lit de données.
+    /// </summary>
+    public const int LongueurMaxExtrait = 500;
 
     /// <summary>Identifiant en base.</summary>
     public required long Id { get; init; }

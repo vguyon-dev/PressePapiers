@@ -18,7 +18,8 @@ public readonly record struct Raccourci(bool Ctrl, bool Alt, bool Maj, uint Touc
 
     /// <summary>
     /// Analyse un texte du type « Ctrl+Alt+Maj+V » : ordre et casse libres, « Shift » accepté pour Maj, espaces autour des
-    /// signes tolérés. Il faut Ctrl ou Alt (Maj seule gênerait la frappe ordinaire) ; la touche Windows est refusée, comme tout
+    /// signes tolérés. Il faut au moins deux modificateurs parmi Ctrl, Alt et Maj : un raccourci global à un seul modificateur
+    /// (Ctrl+C, Ctrl+V, Ctrl+Z, Alt+F4...) détournerait le clavier dans tout Windows. La touche Windows est refusée, comme tout
     /// mot inconnu, parce que Windows se réserve ces combinaisons ; la touche principale est une lettre A-Z, un chiffre 0-9,
     /// F1 à F24 ou Espace.
     /// </summary>
@@ -69,7 +70,9 @@ public readonly record struct Raccourci(bool Ctrl, bool Alt, bool Maj, uint Touc
             touche = code;
         }
 
-        if (touche is null || !(ctrl || alt))
+        // Un seul modificateur ferait d'un raccourci de secours un détournement de frappes courantes (Ctrl+C, Alt+F4...).
+        var nombreModificateurs = (ctrl ? 1 : 0) + (alt ? 1 : 0) + (maj ? 1 : 0);
+        if (touche is null || nombreModificateurs < 2)
         {
             return false;
         }
