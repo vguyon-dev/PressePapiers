@@ -4,6 +4,28 @@
 **Statut :** conception validée section par section en conversation le 13/10/2026 ; affirmations techniques contre-vérifiées sur sources primaires le même jour ; spec en attente de relecture.
 **Maquette de référence :** `maquettes/2026-10-13-propositions-fenetre.html` (proposition B, rendu WinUI 3).
 
+> **Statut au 13/10/2026, après la construction du plan** (`docs/superpowers/plans/2026-10-13-pressepapiers.md`). La
+> conception reste valable ; le code validé du plan la précise ou s'en écarte sur ces points, et c'est lui qui fait foi :
+>
+> - **Section 5** : le déclencheur `element_au` est `AFTER UPDATE OF texte_recherche` (un changement de date d'usage ne
+>   réindexe plus le texte) et la table `element` a deux index (onglet et empreinte ; onglet et date d'usage). Le stockage et
+>   la recherche partagent un seul verrou, la connexion. Schéma exact : tâche 5 du plan, `SchemaBase.cs`.
+> - **Section 8** : Suppr ne supprime que si la recherche est vide, y compris depuis la liste ; Ctrl+Maj+Entrée copie
+>   seulement ; une perte du focus pendant l'ouverture est rattrapée ; la taille mémorisée est en pixels logiques ; le volet
+>   réagit à `ItemInvoked` ; la croix passe par `AppWindow.Closing`, et `Window.Close()` n'y passant pas, la fenêtre a une
+>   méthode `AutoriserFermeture` pour l'arrêt.
+> - **Section 11** : la réinstallation toutes les 15 minutes vit dans le hook lui-même ; l'application relit son état chaque
+>   minute (icône, Paramètres) et relance un hook inactif.
+> - **Section 12** : le relais est créé avant la fenêtre principale ; en Debug, la variable `PRESSEPAPIERS_ARRET_APRES_MS`
+>   arrête l'application pour la recette automatisée ; la publication Release fait 231 Mo.
+> - **Section 13** : une exception sortie d'un rappel `DispatcherQueue` ou d'une minuterie arrête le processus sans passer
+>   par `UnhandledException` : tout rappel posté au fil d'interface passe par `App.PosterSurInterface`, qui l'attrape et la
+>   note. La capture enregistre sur le fil d'interface : un texte de plusieurs mégaoctets gèle la fenêtre environ 2 s
+>   (limite connue).
+> - **Section 16** : point 2 (premier plan d'une fenêtre jamais activée) et point 8 (SQLite 3.53.3, FTS5 trigram)
+>   confirmés ; points 1, 3, 4 et 7 partiellement confirmés ; points 5 et 6 non testés. État détaillé : plan, section
+>   « État des points à valider ».
+
 ## 1. Objet
 
 Remplacer l'historique du presse-papiers de Windows 11 (Win+V) par un outil personnel plus complet.
