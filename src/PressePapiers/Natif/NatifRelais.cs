@@ -13,6 +13,7 @@ internal static partial class NatifRelais
     internal const uint WmClipboardUpdate = 0x031D;
     internal const uint WmPowerBroadcast = 0x0218;
     internal const uint WmWtsSessionChange = 0x02B1;
+    internal const uint WmTimer = 0x0113;
 
     // Paramètres de ces messages.
     internal const int PbtApmResumeAutomatic = 0x0012;
@@ -95,6 +96,13 @@ internal static partial class NatifRelais
     [LibraryImport("user32.dll", EntryPoint = "ChangeWindowMessageFilterEx", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool AutoriserMessage(nint hwnd, uint message, uint action, nint structureResultat);
+
+    [LibraryImport("user32.dll", EntryPoint = "SetTimer", SetLastError = true)]
+    internal static partial nuint PoserMinuterie(nint hwnd, nuint identifiant, uint delaiMs, nint rappel);
+
+    [LibraryImport("user32.dll", EntryPoint = "KillTimer")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool RetirerMinuterie(nint hwnd, nuint identifiant);
 
     [LibraryImport("wtsapi32.dll", EntryPoint = "WTSRegisterSessionNotification", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
