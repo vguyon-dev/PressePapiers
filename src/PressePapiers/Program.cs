@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using PressePapiers.Coeur.Session;
 using PressePapiers.Coeur.Stockage;
 using PressePapiers.Natif;
 using PressePapiers.Systeme;
@@ -29,23 +30,30 @@ public static class Program
         NatifDemarrage.XamlCheckProcessRequirements();
         WinRT.ComWrappersSupport.InitializeComWrappers();
 
-        // Avant toute fenêtre : la décision se prend tant que le processus n'a rien créé.
-        var principale = AppInstance.FindOrRegisterForKey(CleInstance);
-        if (!principale.IsCurrent)
+        // Mode administrateur : avant AppInstance, qui ne voit pas une instance élevée depuis un processus de niveau inférieur
+        // (deux instances ont tourné ensemble chaque matin jusqu'au 28/10/2026, deux hooks Win+V, deux écouteurs). Une instance
+        // élevée ne reçoit pas non plus l'activation d'un processus de niveau inférieur : la seconde s'arrête.
+        if (UneAutreInstanceEstPlusElevee(out var debutPrincipale))
         {
-            // Mode administrateur : une instance élevée ne reçoit pas l'activation d'un processus de niveau inférieur, et la
-            // tenter ferait attendre jusqu'au délai. Autant dire à l'utilisateur ce qui tourne et comment l'ouvrir.
-            if (UneAutreInstanceEstPlusElevee())
+            var prevenir = SecondeInstance.DoitPrevenir(debutPrincipale, DateTime.Now);
+            Noter(journal => journal.Info(
+                $"Seconde instance (processus {Environment.ProcessId}) : l'instance principale tourne en administrateur, arrêt"
+                + (prevenir ? "." : " sans message (lancement de l'ouverture de session).")));
+            if (prevenir)
             {
-                Noter(journal => journal.Info(
-                    $"Seconde instance (processus {Environment.ProcessId}) : l'instance principale tourne en administrateur, arrêt."));
                 NatifDemarrage.AfficherMessage(0,
                     "PressePapiers tourne déjà en administrateur (lancé à l'ouverture de session par une tâche planifiée). "
                     + "Ouvre-le avec Win+V ou avec son icône dans la zone de notification.",
                     "PressePapiers", NatifDemarrage.MB_OK | NatifDemarrage.MB_ICONINFORMATION | NatifDemarrage.MB_SETFOREGROUND);
-                return;
             }
 
+            return;
+        }
+
+        // Avant toute fenêtre : la décision se prend tant que le processus n'a rien créé.
+        var principale = AppInstance.FindOrRegisterForKey(CleInstance);
+        if (!principale.IsCurrent)
+        {
             if (RedirigerVers(principale))
             {
                 return;
@@ -67,6 +75,12 @@ public static class Program
                 $"Seconde instance (processus {Environment.ProcessId}) : l'instance principale a disparu, celle-ci démarre à sa place."));
         }
 
+        // Ordre inverse de l'ouverture de session (instance ordinaire déjà lancée) : l'instance administrateur prend la place.
+        if (LancementAdministrateur.Actif)
+        {
+            ArreterInstancesMoinsElevees();
+        }
+
         // L'événement arrive sur un fil quelconque : App le ramène sur le fil d'interface.
         principale.Activated += (_, _) => App.SignalerActivation();
 
@@ -79,37 +93,100 @@ public static class Program
         });
     }
 
-    // Une autre copie de PressePapiers, de niveau d'intégrité supérieur au nôtre. Un niveau illisible compte comme supérieur : un
-    // processus du même utilisateur dont le jeton refuse d'être lu est presque toujours un processus élevé.
-    private static bool UneAutreInstanceEstPlusElevee()
+    // Une autre copie de PressePapiers, de niveau d'intégrité supérieur au nôtre, et son heure de démarrage si elle se lit. Un
+    // niveau illisible compte comme supérieur : un processus du même utilisateur dont le jeton refuse d'être lu est presque
+    // toujours un processus élevé.
+    private static bool UneAutreInstanceEstPlusElevee(out DateTime? debut)
     {
+        debut = null;
         try
         {
             var nous = NiveauIntegrite.DuProcessusCourant();
-            using var courant = Process.GetCurrentProcess();
-            foreach (var autre in Process.GetProcessesByName(courant.ProcessName))
+            foreach (var autre in AutresInstancesDeLaSession())
             {
                 using (autre)
                 {
-                    // Les copies d'une autre session (autre utilisateur connecté) ne sont pas celle dont on dépend.
-                    if (autre.Id == courant.Id || autre.SessionId != courant.SessionId)
+                    if (NiveauIntegrite.DuProcessus((uint)autre.Id) is int niveau && niveau <= nous)
                     {
                         continue;
                     }
 
-                    if (NiveauIntegrite.DuProcessus((uint)autre.Id) is not int niveau || niveau > nous)
+                    try
                     {
-                        return true;
+                        debut = autre.StartTime;
                     }
+                    catch (Exception)
+                    {
+                        // Heure illisible : l'utilisateur sera prévenu (SecondeInstance.DoitPrevenir).
+                    }
+
+                    return true;
                 }
             }
         }
         catch (Exception)
         {
-            // Pas de diagnostic possible : le chemin habituel (redirection) prend le relais.
+            // Pas de diagnostic possible : le chemin habituel (AppInstance) prend le relais.
         }
 
         return false;
+    }
+
+    // Arrête les copies de niveau inférieur : elles ne voient pas l'instance élevée et garderaient leur propre hook Win+V.
+    private static void ArreterInstancesMoinsElevees()
+    {
+        try
+        {
+            var nous = NiveauIntegrite.DuProcessusCourant();
+            foreach (var autre in AutresInstancesDeLaSession())
+            {
+                using (autre)
+                {
+                    if (NiveauIntegrite.DuProcessus((uint)autre.Id) is not int niveau || niveau >= nous)
+                    {
+                        continue;
+                    }
+
+                    autre.Kill();
+                    var id = autre.Id;
+                    Noter(journal => journal.Avertissement(
+                        $"Instance principale en administrateur (processus {Environment.ProcessId}) : instance ordinaire {id} arrêtée."));
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            Noter(journal => journal.Avertissement("Arrêt des instances ordinaires impossible.", exception));
+        }
+    }
+
+    // Les autres copies vivantes de cette session. Une copie d'une autre session (autre utilisateur connecté) n'est pas celle
+    // dont on dépend ; une copie déjà terminée mais pas encore libérée par Windows ne compte pas.
+    private static IEnumerable<Process> AutresInstancesDeLaSession()
+    {
+        using var courant = Process.GetCurrentProcess();
+        foreach (var autre in Process.GetProcessesByName(courant.ProcessName))
+        {
+            bool garder;
+            try
+            {
+                garder = autre.Id != courant.Id && autre.SessionId == courant.SessionId && !autre.HasExited;
+            }
+            catch (Exception)
+            {
+                // HasExited refusé (processus élevé) : on le suppose vivant.
+                garder = autre.Id != courant.Id && autre.SessionId == courant.SessionId;
+            }
+
+            if (garder)
+            {
+                yield return autre;
+            }
+            else
+            {
+                autre.Dispose();
+            }
+        }
     }
 
     // Transmet l'activation à l'instance principale ; renvoie vrai si elle l'a reçue. L'appel est lancé sur une tâche du

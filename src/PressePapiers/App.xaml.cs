@@ -39,6 +39,7 @@ public sealed partial class App : Application
     private FenetrePrincipaleVue? _vue;
     private FenetrePrincipale? _fenetre;
     private DispatcherQueueTimer? _minuterieCrochet;
+    private SurveillanceInterface? _surveillance;
     private bool _prete;
 #if DEBUG
     private DispatcherQueueTimer? _minuterieArret;
@@ -154,6 +155,7 @@ public sealed partial class App : Application
             _minuterieArret?.Stop();
 #endif
             _minuterieCrochet?.Stop();
+            _surveillance?.Dispose();
             _capture?.Dispose();
             _crochet?.Dispose();
             _icone?.Dispose();
@@ -187,7 +189,13 @@ public sealed partial class App : Application
         _journalFichier = new JournalSerilog(dossiers.Journal);
         _journal = _journalFichier;
         _journal.Info($"Démarrage de PressePapiers {typeof(App).Assembly.GetName().Version} "
-                      + $"(processus {Environment.ProcessId}, données : {dossiers.Racine}).");
+                      + $"(processus {Environment.ProcessId}, données : {dossiers.Racine}, "
+                      + $"{(NiveauIntegrite.ProcessusCourantEstEleve() ? "élevé" : "non élevé")}, exécutable : {Environment.ProcessPath}).");
+
+        PremierPlan.Journal = _journal;
+
+        // Dès le journal ouvert : un gel du démarrage lui-même doit laisser un dump.
+        _surveillance = new SurveillanceInterface(_fil, _journal, Path.Combine(dossiers.Racine, "dumps"));
 
         _base = OuvertureBase.Ouvrir(dossiers, TimeProvider.System, _journal, _dialogues);
         if (_base is null)
@@ -258,6 +266,17 @@ public sealed partial class App : Application
             _minuterieArret.Tick += (_, _) => ExecuterProtege(Quitter, "l'arrêt de recette");
             _minuterieArret.Start();
             _journal.Info($"Arrêt de recette programmé dans {delai} ms.");
+        }
+
+        // PRESSEPAPIERS_GEL_APRES_MS fige le fil d'interface 25 s : recette de SurveillanceInterface (gel, dump, reprise).
+        if (int.TryParse(Environment.GetEnvironmentVariable("PRESSEPAPIERS_GEL_APRES_MS"), out var gel) && gel > 0)
+        {
+            var minuterieGel = _fil.CreateTimer();
+            minuterieGel.Interval = TimeSpan.FromMilliseconds(gel);
+            minuterieGel.IsRepeating = false;
+            minuterieGel.Tick += (_, _) => Thread.Sleep(TimeSpan.FromSeconds(25));
+            minuterieGel.Start();
+            _journal.Info($"Gel de recette programmé dans {gel} ms.");
         }
 #endif
     }

@@ -78,6 +78,7 @@ public sealed class ServiceRecollage
             // Le niveau n'est lu que s'il peut changer la décision.
             int? niveauCible = existe && !copieSeule ? NiveauIntegrite.DeFenetre(fenetreOrigine) : null;
             var issue = DecisionCollage.Decider(copieSeule, origineConnue, existe, niveauCible, NiveauIntegrite.DuProcessusCourant());
+            _journal.Info($"Élément {element.Id} ({element.Type}) écrit dans le presse-papiers, issue : {issue}.");
 
             switch (issue)
             {

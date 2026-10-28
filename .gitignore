@@ -15,6 +15,7 @@ publish/
 # Résultats de tests
 TestResults/
 *.trx
+.temp/
 coverage*/
 
 # Paquets NuGet restaurés localement

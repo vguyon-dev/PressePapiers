@@ -44,8 +44,10 @@ internal static class GestionDemarrage
 
     /// <summary>
     /// Mode administrateur : le lancement est confié à une tâche planifiée, que le script d'installation crée et retire. L'application
-    /// ne gère plus la clé Run, mais en retire la valeur si elle pointe vers cet exécutable : elle ferait un second lancement,
-    /// non élevé, à chaque ouverture de session. Une valeur qui pointe ailleurs (autre installation) n'est pas touchée.
+    /// ne gère plus la clé Run, mais en retire la valeur si elle lance un PressePapiers.exe, celui-ci ou une autre installation :
+    /// elle ferait un second lancement, non élevé, à chaque ouverture de session. Constaté jusqu'au 28/10/2026 : la valeur
+    /// pointait vers l'ancienne installation ordinaire (%LOCALAPPDATA%\Programs), restée en place, qui tournait chaque matin
+    /// à côté de l'instance administrateur sans la voir.
     /// </summary>
     /// <param name="chemin">Chemin de l'exécutable en cours.</param>
     /// <param name="journal">Journal de l'application.</param>
@@ -54,10 +56,11 @@ internal static class GestionDemarrage
 #if DEBUG
         journal.Info("Version Debug : la clé Run du démarrage avec Windows n'est pas modifiée.");
 #else
-        if (string.Equals(LireValeur(), ValeurAttendue(chemin), StringComparison.OrdinalIgnoreCase))
+        var actuel = LireValeur();
+        if (LancePressePapiers(actuel))
         {
             DemarrageWindows.Appliquer(false, chemin);
-            journal.Info("Mode administrateur : clé Run retirée, le lancement est confié à la tâche planifiée.");
+            journal.Info($"Mode administrateur : clé Run retirée ({actuel}), le lancement est confié à la tâche planifiée.");
         }
         else
         {
@@ -84,6 +87,11 @@ internal static class GestionDemarrage
 #if !DEBUG
     // Même forme que DemarrageWindows.Appliquer : le chemin entre guillemets.
     private static string ValeurAttendue(string chemin) => $"\"{chemin}\"";
+
+    // Valeur Run de la forme écrite par DemarrageWindows (chemin entre guillemets) ou saisie à la main (sans guillemets).
+    private static bool LancePressePapiers(string? valeur) =>
+        !string.IsNullOrWhiteSpace(valeur)
+        && string.Equals(Path.GetFileName(valeur.Trim().Trim('"')), "PressePapiers.exe", StringComparison.OrdinalIgnoreCase);
 
     private static string? LireValeur()
     {

@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
+using PressePapiers.Coeur.Journalisation;
 using PressePapiers.Natif;
 
 namespace PressePapiers.Systeme;
@@ -29,8 +31,20 @@ public static class PremierPlan
     // Classes de la barre des tâches (principale et secondaires) et du bureau : jamais une fenêtre d'origine.
     private static readonly string[] _classesExclues = ["Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW"];
 
+    /// <summary>
+    /// Journal des repères : chaque étape touche une autre application (SendInput, AttachThreadInput) et peut bloquer sur elle ;
+    /// la dernière ligne avant un gel dit laquelle. Posé au démarrage, nul tant qu'il ne l'est pas.
+    /// </summary>
+    internal static IJournal Journal { get; set; } = JournalNul.Instance;
+
     /// <summary>Restaure la fenêtre si besoin puis la met au premier plan ; renvoie faux si Windows refuse.</summary>
-    public static bool Amener(nint hwnd) => AmenerParEtapes(hwnd) != Etape.Echec;
+    public static bool Amener(nint hwnd)
+    {
+        var chrono = Stopwatch.StartNew();
+        var etape = AmenerParEtapes(hwnd);
+        Journal.Info($"Premier plan : {etape} en {chrono.ElapsedMilliseconds} ms.");
+        return etape != Etape.Echec;
+    }
 
     /// <summary>Comme <see cref="Amener"/>, mais indique l'étape qui a réussi.</summary>
     internal static Etape AmenerParEtapes(nint hwnd)
@@ -85,6 +99,9 @@ public static class PremierPlan
         var filCible = NatifPremierPlan.GetWindowThreadProcessId(hwnd, out _);
 
         // Le fil courant se lie à chaque autre fil concerné (premier plan, cible), une seule fois chacun.
+        // Écrit avant l'appel : AttachThreadInput lie notre fil à celui d'une autre application, qui peut être figée.
+        Journal.Info($"Premier plan : AttachThreadInput vers les fils {filPremierPlan} et {filCible} "
+                     + $"(fenêtre active de « {NomProcessusDeFenetre(NatifPremierPlan.GetForegroundWindow())} »).");
         Span<uint> candidats = [filPremierPlan, filCible];
         Span<uint> attaches = stackalloc uint[2];
         var nombre = 0;
@@ -104,6 +121,20 @@ public static class PremierPlan
         {
             // Toujours détacher : un attachement oublié lierait durablement les files d'entrée.
             for (var i = 0; i < nombre; i++) NatifPremierPlan.AttachThreadInput(courant, attaches[i], false);
+        }
+    }
+
+    private static string NomProcessusDeFenetre(nint hwnd)
+    {
+        try
+        {
+            NatifPremierPlan.GetWindowThreadProcessId(hwnd, out var id);
+            using var processus = Process.GetProcessById((int)id);
+            return processus.ProcessName;
+        }
+        catch (Exception)
+        {
+            return "?";
         }
     }
 

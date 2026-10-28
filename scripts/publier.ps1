@@ -232,7 +232,28 @@ function InstallerEnAdministrateur([string]$cible, [string]$executable, [string]
         Dire 'Valeur Run « PressePapiers » retirée (le lancement est confié à la tâche planifiée).'
     }
 
+    # L'ancienne installation ordinaire réécrit la valeur Run à chaque lancement et ne voit pas l'instance élevée : laissée en
+    # place, elle a tourné chaque matin à côté d'elle jusqu'au 28/10/2026. Seul le programme part, les données sont ailleurs.
+    $dossierNormal = Split-Path $executableNormal
+    if (Test-Path -LiteralPath $executableNormal) {
+        Remove-Item -LiteralPath $dossierNormal -Recurse -Force
+        Dire "Ancienne installation ordinaire retirée : $dossierNormal"
+    }
+
+    PoserDumpsDePlantage
     Dire "Installé : $executable"
+}
+
+# Clé WER LocalDumps : à chaque plantage de PressePapiers.exe, Windows écrit un dump complet dans le dossier des données
+# (trois gardés). Les gels sont couverts par l'application elle-même (SurveillanceInterface).
+function PoserDumpsDePlantage {
+    $cle = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\PressePapiers.exe'
+    $dossier = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PressePapiers\dumps'
+    New-Item -Path $cle -Force | Out-Null
+    New-ItemProperty -Path $cle -Name DumpFolder -PropertyType ExpandString -Value $dossier -Force | Out-Null
+    New-ItemProperty -Path $cle -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
+    New-ItemProperty -Path $cle -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
+    Dire "Dumps de plantage activés : $dossier"
 }
 
 # Étape qui exige les droits administrateur du mode -RetirerAdministrateur. Appelée par le processus élevé.

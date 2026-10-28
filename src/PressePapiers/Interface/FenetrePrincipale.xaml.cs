@@ -139,6 +139,7 @@ public sealed partial class FenetrePrincipale : Window
         }
 
         _ouvertureEnCours = true;
+        Vue.Journal.Info($"Ouverture de la fenêtre ({origine}).");
         var rattrapageProgramme = false;
         try
         {

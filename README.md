@@ -76,8 +76,11 @@ en mode normal ou dans Program Files), copie la publication dans `C:\Program Fil
 modifiable que par les administrateurs, crée la tâche planifiée `PressePapiers` et retire la valeur Run de l'utilisateur
 (sans cela l'outil se lancerait deux fois). La tâche se déclenche à l'ouverture de session de l'utilisateur courant, s'exécute
 sous son compte avec les privilèges les plus élevés, sans limite de durée, sur batterie comme sur secteur, en une seule
-instance. `-Lancer` la démarre par `Start-ScheduledTask`, sans invite. Pour mettre à jour, relancer la même commande. Le
-dossier installé en mode normal n'est pas supprimé : il ne sert plus, à effacer à la main si on le souhaite.
+instance. `-Lancer` la démarre par `Start-ScheduledTask`, sans invite. Pour mettre à jour, relancer la même commande.
+L'étape élevée supprime aussi le programme installé en mode normal (`%LOCALAPPDATA%\Programs\PressePapiers`, les données ne
+sont pas touchées) : laissé en place jusqu'au 28/10/2026, il réécrivait sa valeur Run et tournait chaque matin à côté de
+l'instance élevée. Elle active enfin les dumps de plantage de Windows pour `PressePapiers.exe` (clé `LocalDumps`, voir
+[Diagnostiquer un gel ou un plantage](#diagnostiquer-un-gel-ou-un-plantage)).
 
 **Revenir au mode normal** (une invite UAC) :
 
@@ -91,10 +94,12 @@ normal si elle existe (sinon `publier.ps1 -Lancer` l'installe). Le dossier de Pr
 **Ce que fait l'application.** Elle se sait lancée par la tâche quand son processus est élevé *et* que son exécutable est dans
 un dossier protégé (Program Files, Program Files (x86), Windows). La lecture est celle du jeton du processus, déjà faite pour
 le collage : aucun processus externe, aucun appel au Planificateur de tâches au démarrage. Dans ce mode elle ne gère plus la clé
-Run (elle retire la valeur si elle pointe vers elle) et la page Paramètres affiche « Lancé en administrateur par une tâche
-planifiée (géré par publier.ps1) » à la place de l'interrupteur. Un exécutable élevé hors d'un dossier protégé n'est pas ce
-mode. Un second lancement à la main (non élevé) ne peut pas activer l'instance élevée : il affiche que l'outil tourne déjà en
-administrateur et s'ouvre par Win+V ou son icône. « Ouvrir le dossier des données » et « Ouvrir le journal » passent par
+Run (elle retire la valeur si elle lance un `PressePapiers.exe`, le sien ou celui d'une autre installation), arrête une instance
+ordinaire déjà lancée, et la page Paramètres affiche « Lancé en administrateur par une tâche planifiée (géré par publier.ps1) »
+à la place de l'interrupteur. Un exécutable élevé hors d'un dossier protégé n'est pas ce mode. Un second lancement non élevé ne
+peut pas activer l'instance élevée, et `AppInstance` ne la voit pas : il la cherche donc lui-même parmi les processus, avant
+`AppInstance`, et s'arrête. Lancé moins de 5 minutes après elle (ouverture de session), il s'arrête sans rien dire ; plus
+tard, il affiche que l'outil tourne déjà en administrateur et s'ouvre par Win+V ou son icône. « Ouvrir le dossier des données » et « Ouvrir le journal » passent par
 l'Explorateur, pour que l'éditeur de texte ne s'ouvre pas lui-même en administrateur.
 
 **Contrepartie de sécurité.** Un programme qui lit tout le clavier tourne désormais avec les droits administrateur. C'est pour
@@ -178,12 +183,30 @@ prend les défauts et le note au journal.
 | `images\` | une image PNG par élément de type image |
 | `sauvegardes\` | copie de la base faite à chaque démarrage, les 3 dernières gardées ; une base illisible au démarrage propose de restaurer la plus récente |
 | `journal\` | journal de l'application, un fichier par jour, 14 jours gardés |
+| `dumps\` | dumps des gels du fil d'interface (`gel-*.dmp`, 3 gardés) et, en mode administrateur, des plantages (WER) |
 | `parametres.json` | réglages |
 
 La variable d'environnement `PRESSEPAPIERS_DONNEES` remplace ce dossier par un autre : pour essayer l'application sans
 toucher aux vraies données. Pour un essai, y créer d'abord un `parametres.json` contenant `{ "DemarrageAvecWindows": false }`,
 sinon le premier lancement d'une version Release inscrit l'exécutable d'essai dans la clé Run (une version Debug n'écrit jamais
-cette clé). Dans une version Debug, `PRESSEPAPIERS_ARRET_APRES_MS` demande un arrêt propre au bout de ce délai.
+cette clé). Dans une version Debug, `PRESSEPAPIERS_ARRET_APRES_MS` demande un arrêt propre au bout de ce délai, et
+`PRESSEPAPIERS_GEL_APRES_MS` fige le fil d'interface 25 s au bout de ce délai (recette du chien de garde).
+
+## Diagnostiquer un gel ou un plantage
+
+- **Journal** (`journal\`) : démarrage (processus, élevé ou non, exécutable), secondes instances écartées, ouvertures de la
+  fenêtre, chaque mise au premier plan avec son étape et sa durée (la tentative `AttachThreadInput` est notée *avant*
+  l'appel, avec l'application visée), chaque élément collé ou copié et son issue.
+- **Gel** : `SurveillanceInterface` envoie un signe de vie au fil d'interface toutes les 5 s. Sans réponse depuis 15 s, elle
+  note le gel (`[ERR] Fil d'interface sans réponse`), écrit un dump complet dans `dumps\` (`MiniDumpWriteDump`, environ 500
+  Mo), puis note la reprise et sa durée. La dernière ligne du journal avant le gel dit ce qui était en cours.
+- **Plantage** : en mode administrateur, la clé `LocalDumps` de Windows écrit un dump complet dans `dumps\`.
+- **Lecture d'un dump** : `dotnet tool install -g dotnet-dump`, puis `dotnet-dump analyze <fichier>` et, dans l'invite,
+  `clrthreads`, `setthread <n>` et `clrstack` (le fil d'interface est celui qui exécute `Program.Main`).
+- Le gel du 28/10/2026 (processus impossible à arrêter, même en administrateur, jusqu'au redémarrage) n'avait laissé aucune
+  trace : c'est ce qui a fait ajouter tout ce qui précède. Sa cause reste inconnue ; le premier suspect est
+  `PremierPlan.AmenerParAttachement` (`AttachThreadInput` lie le fil d'interface à celui d'une autre application, figée elle
+  aussi si celle-ci l'est).
 
 ## Développement
 
@@ -207,12 +230,13 @@ Comportements à connaître :
 - Le [mode administrateur](#mode-administrateur) se reconnaît dans `ModeAdministrateur` (Coeur, testé) : processus élevé
   (niveau d'intégrité du jeton, `NiveauIntegrite`) et exécutable sous Program Files, Program Files (x86) ou Windows ;
   `LancementAdministrateur` fournit les deux faits. `GestionDemarrage` n'écrit plus la clé Run dans ce cas, les Paramètres
-  affichent un texte à la place de l'interrupteur et `Program` explique à un second lancement non élevé que l'outil tourne
-  déjà en administrateur.
+  affichent un texte à la place de l'interrupteur, et `Program` écarte un second lancement non élevé avant `AppInstance`
+  (silencieux à l'ouverture de session, règle `SecondeInstance` de Coeur, testée).
 - La liste et la recherche ne lisent que des résumés (`ElementResume` : début du texte, miniature des images) ; l'élément
   complet n'est lu qu'à la sélection (aperçu) et au collage. Fenêtre masquée, rien n'est relu et aucune ligne n'est gardée en
   mémoire : la liste est lue une seule fois par ouverture.
-- La capture lit le presse-papiers sur le fil d'interface et y enregistre l'élément : copier un texte de plusieurs
+- La capture lit le presse-papiers sur un fil dédié (`LecteurPressePapiers`, 2 s au plus) puis enregistre l'élément sur le
+  fil d'interface : copier un texte de plusieurs
   mégaoctets gèle la fenêtre une à deux secondes (indexation plein texte). Le dépôt et la recherche partagent un seul
   verrou, la connexion SQLite : ils restent sûrs si cette écriture passe un jour sur un autre fil.
 - Une exception qui sort d'un rappel de `DispatcherQueue` ou d'une minuterie arrête le processus sans passer par
@@ -255,6 +279,7 @@ Comportements à connaître :
 - [ ] Win+V et Entrée dans une application ordinaire : même fonctionnement qu'en mode normal.
 - [ ] Clic et clic droit sur l'icône (outil élevé, Explorateur non élevé) : la fenêtre s'ouvre, le menu fonctionne ; redémarrage de l'Explorateur : l'icône réapparaît.
 - [ ] Lancer à la main `PressePapiers.exe` d'une installation normale pendant que l'instance élevée tourne : message « tourne déjà en administrateur », pas de seconde instance.
+- [ ] Après une ouverture de session : un seul processus `PressePapiers.exe` (élevé), une seule ligne « Hook Win+V réinstallé » par quart d'heure dans le journal, aucune valeur `PressePapiers` dans `HKCU\...\Run`.
 - [ ] « Ouvrir le dossier des données » et « Ouvrir le journal » depuis les Paramètres : le dossier s'ouvre, le journal s'ouvre dans l'éditeur sans droits administrateur (à vérifier dans le Gestionnaire des tâches).
 - [ ] Fermer la session puis la rouvrir : l'outil se relance seul, élevé, sans invite ni second exemplaire.
 - [ ] `publier.ps1 -Administrateur` relancé : mise à jour sans doublon de tâche. `publier.ps1 -RetirerAdministrateur` : la tâche disparaît, l'instance de Program Files s'arrête.
